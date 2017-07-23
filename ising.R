@@ -2,6 +2,7 @@ library(reshape2)
 library(tidyverse)
 library(ggplot2)
 library(rstan)
+require(Rcpp)
 
 p = function(x) {
   as.tibble(melt(x)) %>%
@@ -13,7 +14,7 @@ p = function(x) {
     scale_y_reverse()
 }
 
-E = function(x) {
+E1 = function(x) {
   tot = 0.0
   
   for(i in 1:nrow(x)) {
@@ -124,12 +125,13 @@ for(i in 1:N) {
 }
 
 N = 10
-mu = 0.1
-beta = -0.5
-kT = 0.25
+mu = 0.2
+beta = 0.5
+kT = 1.0
 
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 
+sourceCpp("ising.cpp")
 e = E(x)
 run = function(mu, beta, x, S) {
   out = array(0, dim = c(S, 2))
@@ -143,7 +145,7 @@ run = function(mu, beta, x, S) {
     
     dsolo_ = dsolo(x, i, j)
     dpairs_ = dpairs(x, i, j)
-    dE = -mu * dsolo_ -beta * dpairs_
+    dE = mu * dsolo_ + beta * dpairs_
     r = runif(1)
     
     #print(paste(dE, exp(-dE / kT), r))
@@ -162,24 +164,33 @@ run = function(mu, beta, x, S) {
   list(x = x,
        states = out)
 }
-
-S = 10000
-out = run(mu, beta, x, S)
+system.time(run(mu, beta, x, S))
+system.time(ising(x, mu, beta, kT, S))
+S = 1000000
+out = ising(x, mu, beta, kT, S)
 x = out$x
 p(x)
 as.tibble(out$states) %>%
-  mutate(group = sample(S, S) %/% 1001) %>%
+  mutate(group = sample(S, S) %/% 101) %>%
   group_by(group) %>%
   summarize(mean_solo = mean(solo),
             mean_pairs = mean(pairs),
             sd_solo = sd(solo),
             sd_pairs = sd(pairs),
             conc = mean(solo / (2 * N * N) + 1.0 / 2.0),
-            cov_solo = -cov(solo, solo) / kT,
-            cov_solo_pairs = -cov(solo, pairs) / kT,
+            dmdmu = -cov(solo, solo) / kT,
+            dmdbeta = -cov(solo, pairs) / kT,
             n = n()) %>%
-  select(conc) %>%
+  select(mean_solo, conc, dmdmu, dmdbeta) %>%
   summarize_all(funs(mean, sd))
+
+as.tibble(out$states) %>%
+  mutate(rn = row_number()) %>%
+  sample_n(1000) %>%
+  gather(type, number, c(solo, pairs)) %>%
+  ggplot(aes(rn, number, color = type)) +
+  geom_point()
+p(x)
 
 mus = seq(-4.0, 4.0, length = 100)
 
@@ -189,7 +200,7 @@ results = bind_rows(map(mus, function(mu) {
   out = run(mu, beta, x, S)
   x = out$x
   as.tibble(out$states) %>%
-    mutate(group = sample(S, S) %/% 1001) %>%
+    mutate(group = row_number() %/% 1001) %>%
     group_by(group) %>%
     summarize(mean_solo = mean(solo),
               mean_pairs = mean(pairs),
@@ -206,17 +217,39 @@ results = bind_rows(map(mus, function(mu) {
 results %>% mutate(mu = mus) %>%
   ggplot(aes(mu, mean)) +
   geom_ribbon(aes(ymin = mean - 2 * sd, ymax = mean + 2 * sd)) +
-  #geom_line() + 
+  geom_line() + 
   coord_flip()
 
-as.tibble(out$states) %>%
-  mutate(rn = row_number()) %>%
-  sample_n(1000) %>%
-  gather(type, number, c(solo, pairs)) %>%
-  ggplot(aes(rn, number, color = type)) +
-  geom_point()
-p(x)
 
-#print(paste(e, E(x)))
-#print(paste(solo_, solo(x)))
-#print(paste(pairs_, pairs(x)))
+getEdE = function(mu, beta) {
+  S = 10000000
+  x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
+  out = run(mu, beta, x, S)
+  x = out$x
+  out = run(mu, beta, x, S)
+  x = out$x
+  as.tibble(out$states) %>%
+    mutate(group = sample(S, S) %/% 10001) %>%
+    group_by(group) %>%
+    summarize(mean_solo = mean(solo),
+              mean_pairs = mean(pairs),
+              sd_solo = sd(solo),
+              sd_pairs = sd(pairs),
+              conc = mean(solo / (2 * N * N) + 1.0 / 2.0),
+              dmdmu = -cov(solo, solo) / kT,
+              dmdbeta = -cov(solo, pairs) / kT,
+              n = n()) %>%
+    select(mean_solo, conc, dmdmu, dmdbeta) %>%
+    summarize(m_phi = mean(mean_solo),
+              m_dmdmu = mean(dmdmu),
+              m_dmdbeta = mean(dmdbeta),
+              sd_mphi = sd(mean_solo),
+              sd_dmdmu = sd(dmdmu),
+              sd_dmdbeta = sd(dmdbeta))
+}
+
+s1 = getEdE(0.2, 0.5)
+s2 = getEdE(0.2, 0.5 + 0.01)
+s1
+s2
+(s2 - s1) / 0.01
