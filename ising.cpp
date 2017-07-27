@@ -29,13 +29,8 @@ double pairs(NumericMatrix x) {
   double total = 0.0;
   for(int i = 0; i < x.nrow(); i++) {
     for(int j = 0; j < x.ncol(); j++) {
-      if(i < x.nrow() - 1) {
-        total += x(i, j) * x(i + 1, j);
-      }
-          
-      if(j < x.ncol() - 1) {
-        total += x(i, j) * x(i, j + 1);
-      }
+      total += x(i, j) * x((i + 1) % x.nrow(), j);
+      total += x(i, j) * x(i, (j + 1) % x.ncol());
     }
   }
   return total;
@@ -61,10 +56,10 @@ List ising(NumericMatrix x, double mu, double beta, double kT, int S) {
     int j = dis(gen);
     
     double dsolo_ = -2 * x(i, j);
-    double dpairs_ = ((i < x.nrow() - 1) ? -2.0 * x(i, j) * x(i + 1, j) : 0) +
-      ((i > 0) ? -2.0 * x(i - 1, j) * x(i, j) : 0) +
-      ((j < x.ncol() - 1) ? -2.0 * x(i, j) * x(i, j + 1) : 0) +
-      ((j > 0) ? -2.0 * x(i, j - 1) * x(i, j) : 0);
+    double dpairs_ = -2.0 * x(i, j) * x((i + 1) % N, j) +
+                     -2.0 * x((i - 1 + N) % N, j) * x(i, j) +
+                     -2.0 * x(i, j) * x(i, (j + 1) % N) +
+                     -2.0 * x(i, (j - 1 + N) % N) * x(i, j);
      
     double dE = mu * dsolo_ + beta * dpairs_;
     double r = runif(gen);
@@ -84,6 +79,78 @@ List ising(NumericMatrix x, double mu, double beta, double kT, int S) {
   ret["x"] = x;
   ret["states"] = out;
   ret["accept"] = accept / double(S);
+  return ret;
+}
+
+// [[Rcpp::export]]
+List ising_kmc(NumericMatrix x, double mu, double beta, double kT, int S) {
+  NumericMatrix out(S, 3);
+  colnames(out) = CharacterVector::create("dt", "solo", "pairs");
+  
+  int N = x.nrow();
+  int accept = 0;
+  
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<> runif(0.0, 1.0);
+  std::uniform_int_distribution<> dis(0, N - 1);
+  double solo_ = solo(x);
+  double pairs_ = pairs(x);
+  double E = mu * solo_ + beta * pairs_;
+  for(int s = 0; s < S; s++) {
+    std::vector<double> as(N * N);
+
+    for(int i = 0; i < N; i++) {
+      for(int j = 0; j < N; j++) {
+        double dsolo_ = -2 * x(i, j);
+        double dpairs_ = -2.0 * x(i, j) * x((i + 1) % N, j) +
+          -2.0 * x((i - 1 + N) % N, j) * x(i, j) +
+          -2.0 * x(i, j) * x(i, (j + 1) % N) +
+          -2.0 * x(i, (j - 1 + N) % N) * x(i, j);
+          
+        double dE = mu * dsolo_ + beta * dpairs_;
+        as[i + j * N] = std::min(1.0, std::exp(-dE / kT));
+      }
+    }
+    
+    double at = 0.0;
+    for(int ij = 0; ij < N * N; ij++) {
+      at += as[ij];
+    }
+
+    double r1 = at * runif(gen),
+      r2 = (1 / at) * std::log(1 / runif(gen));
+    
+    at = 0.0;
+    for(int ij = 0; ij < N * N; ij++) {
+      at += as[ij];
+      if(at > r1) {
+        int i = ij % N;
+        int j = ij / N;
+        
+        double dsolo_ = -2 * x(i, j);
+        double dpairs_ = -2.0 * x(i, j) * x((i + 1) % N, j) +
+          -2.0 * x((i - 1 + N) % N, j) * x(i, j) +
+          -2.0 * x(i, j) * x(i, (j + 1) % N) +
+          -2.0 * x(i, (j - 1 + N) % N) * x(i, j);
+          
+        solo_ = solo_ + dsolo_;
+        pairs_ = pairs_ + dpairs_;
+        
+        x(i, j) = x(i, j) * -1;
+        
+        break;
+      }
+    }
+          
+    out(s, 0) = r2;
+    out(s, 1) = solo_;
+    out(s, 2) = pairs_;
+  }
+  
+  List ret;
+  ret["x"] = x;
+  ret["states"] = out;
   return ret;
 }
 

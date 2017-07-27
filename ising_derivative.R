@@ -6,7 +6,7 @@ library(parallel)
 require(Rcpp)
 
 N = 10
-mu = -0.2
+mu = -0.25
 beta = 0.15
 kT = 1.0
 
@@ -14,9 +14,29 @@ sourceCpp("ising.cpp")
 
 S = 100000 - 1
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
-out = ising(x, mu, beta, kT, S)
+as.tibble(ising(x, mu, beta, kT, S)$states) %>%
+  mutate(rn = row_number()) %>%
+  gather(key, value, c(solo, pairs)) %>%
+  ggplot(aes(rn, value, color = key)) +
+  geom_line()
 
-getphi = function(mu, beta, tol = 0.1, chains = 4) {
+as.tibble(ising_kmc(x, mu, beta, kT, S)$states) %>%
+  mutate(dt = dt / sum(dt)) %>%
+  mutate(time = cumsum(dt)) %>%
+  top_n(10000) %>%
+  gather(key, value, c(solo, pairs)) %>%
+  ggplot(aes(time, value, color = key)) +
+  geom_line()
+
+as.tibble(ising(x, mu, beta, kT, S)$states) %>% summarise(m = mean(solo),
+                                                          sd = sd(solo))
+
+as.tibble(ising_kmc(x, mu, beta, kT, S)$states) %>%
+  mutate(dt = dt / sum(dt)) %>%
+  summarise(m = mean(dt * solo) * S,
+            sd = sd(solo))
+
+getphi = function(mu, beta, tol = 1.01, chains = 4) {
   S = 10^4 - 1
   x = list()
   states = list()
@@ -36,6 +56,12 @@ getphi = function(mu, beta, tol = 0.1, chains = 4) {
                 v = var(solo),
                 n = n())
     
+    r = pc %>% summarize(mt = mean(m),
+                     bt = sum((m - mt)^2) / (chains - 1),
+                     wt = mean(v),
+                     n = n[1]) %>%
+      mutate(r = sqrt(((n - 1) * wt / n + bt) / wt)) %>%
+      pull(r)
     #wt = mean(pc %>% pull(v))
     #bt = var(pc %>% pull(m))
     
@@ -45,8 +71,7 @@ getphi = function(mu, beta, tol = 0.1, chains = 4) {
     #print.data.frame(pc)
     #print(paste(sig2h, wt, bt, f, r))
     
-    if(sd(pc %>% pull(m)) < tol) {
-      print(f)
+    if(r < tol) {
       break;
     }
     
@@ -60,7 +85,7 @@ getphi = function(mu, beta, tol = 0.1, chains = 4) {
   bind_rows(states)
 }
 
-getphi(0.2, 0.5, 1.0) %>%
+getphi(0.2, 0.5, 1.01) %>%
   group_by(chain) %>%
   top_n(10000) %>%
   mutate(rn = row_number()) %>%
