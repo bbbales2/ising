@@ -1,11 +1,11 @@
-radford = function (Ugrad_U, epsilon, L, current_q)
+radford = function (UgradU, epsilon, L, current_q)
 {
   q = current_q
   p = rnorm(length(q), 0, 1) # independent standard normal variates
   current_p = p
   # Make a half step for momentum at the beginning
   ugc = UgradU(q)
-  p = p - epsilon * ugc$grad / 2
+  p = p - epsilon * ugc$dudq / 2
   # Alternate full steps for position and momentum
   for (i in 1:L)
   {
@@ -13,13 +13,15 @@ radford = function (Ugrad_U, epsilon, L, current_q)
     q = q + epsilon * p
     # Make a full step for the momentum, except at end of trajectory
     ug = UgradU(q)
+    
+    #print(paste(q, p))
     if (i!=L) {
-      p = p - epsilon * ug$grad
+      p = p - epsilon * ug$dudq
     }
   }
   # Make a half step for momentum at the end.
   ug = UgradU(q)
-  p = p - epsilon * ug$grad / 2
+  p = p - epsilon * ug$dudq / 2
   # Negate momentum at end of trajectory to make the proposal symmetric
   p = -p
   # Evaluate potential and kinetic energies at start and end of trajectory
@@ -29,6 +31,9 @@ radford = function (Ugrad_U, epsilon, L, current_q)
   proposed_K = sum(p^2) / 2
   # Accept or reject the state at end of trajectory, returning either
   # the position at the end of the trajectory or the initial position
+  #print(current_U + current_K)
+  #print(proposed_U + proposed_K)
+  #print(proposed_K)
   if (runif(1) < exp(current_U-proposed_U+current_K-proposed_K))
   {
     return (q) # accept

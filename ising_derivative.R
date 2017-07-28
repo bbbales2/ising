@@ -12,7 +12,13 @@ kT = 1.0
 
 sourceCpp("ising.cpp")
 
-S = 100000 - 1
+dmu = 0.00001
+((ising_kmc_deriv(x, mu + dmu, beta, kT, 10, 0)$phi - ising_kmc_deriv(x, mu, beta, kT, 10, 0)$phi) / dmu)
+dbeta = 0.00001
+((ising_kmc_deriv(x, mu, beta + dbeta, kT, 10, 0)$phi - ising_kmc_deriv(x, mu, beta, kT, 10, 0)$phi) / dbeta)
+ising_kmc_deriv(x, mu, beta, kT, 10, 0)
+
+S = 2 - 1
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 as.tibble(ising(x, mu, beta, kT, S)$states) %>%
   mutate(rn = row_number()) %>%
