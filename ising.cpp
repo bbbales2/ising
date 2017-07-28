@@ -173,6 +173,7 @@ List ising_kmc_deriv(NumericMatrix x_, double mu, double beta, double kT, int S,
   double dphidmu = 0.0;
   double dphidbeta = 0.0;
   double T = 0.0, dTdmu = 0.0, dTdbeta = 0.0;
+  //while(T < S) {
   for(int s = 0; s < S; s++) {
     std::vector<double> as(N * N);
     double dadmu = 0.0, dadbeta = 0.0;
@@ -209,6 +210,8 @@ List ising_kmc_deriv(NumericMatrix x_, double mu, double beta, double kT, int S,
     
     double at2 = 0.0;
     
+    double phis = solo_ / double(N * N);
+    
     for(int ij = 0; ij < N * N; ij++) {
       at2 += as[ij];
       if(at2 > r1) {
@@ -230,7 +233,6 @@ List ising_kmc_deriv(NumericMatrix x_, double mu, double beta, double kT, int S,
       }
     }
     
-    double phis = solo_ / double(N * N);
     double dr2dmu = -(r2 / at) * dadmu;
     double dr2dbeta = -(r2 / at) * dadbeta;
     T += r2;
