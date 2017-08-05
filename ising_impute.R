@@ -10,7 +10,7 @@ mu = -0.25
 beta = 0.15
 kT = 1.0
 sigma = 0.01
-S = 100
+S = 100000
 
 sourceCpp("ising.cpp")
 
@@ -56,6 +56,11 @@ dbeta = 0.0000001
 (UgradU(beta + dbeta)$u - UgradU(beta)$u) / dbeta
 UgradU(beta)
 
+betas = seq(0.3, 0.4, length = 100)
+mlogp = lapply(betas, function(beta) { UgradU(beta)$u }) %>% unlist()
+as.tibble(list(beta = betas, mlogp = mlogp)) %>% ggplot(aes(beta, mlogp)) +
+  geom_point()
+
 source("radford.R")
 
 bcs = rep(0, 50)
@@ -68,4 +73,5 @@ for(i in 2:length(bcs)) {
     geom_point() +
     geom_line(aes(mus, guess), colour = "red"))
 }
+bcs
 
