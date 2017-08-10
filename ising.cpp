@@ -1,5 +1,7 @@
 #include <Rcpp.h>
 #include <random>
+#include <algorithm>
+#include <vector>
 using namespace Rcpp;
 
 // This is a simple example of exporting a C++ function to R. You can
@@ -12,6 +14,11 @@ using namespace Rcpp;
 //   http://gallery.rcpp.org/
 //
 // [[Rcpp::plugins(cpp11)]]
+
+// [[Rcpp::export]]
+int modtest(int v) {
+  return (v + 5) % 5;
+}
 
 // [[Rcpp::export]]
 double solo(NumericMatrix x) {
@@ -36,8 +43,21 @@ double pairs(NumericMatrix x) {
   return total;
 }
 
+
 // [[Rcpp::export]]
-List ising(NumericMatrix x, double mu, double beta, double kT, int S) {
+double corners(NumericMatrix x) {
+  double total = 0.0;
+  for(int i = 0; i < x.nrow(); i++) {
+    for(int j = 0; j < x.ncol(); j++) {
+      total += x(i, j) * x((i + 1) % x.nrow(), (j + 1) % x.ncol());
+      total += x(i, j) * x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol());
+    }
+  }
+  return total;
+}
+
+// [[Rcpp::export]]
+List ising(NumericMatrix x, double mu, double beta, double kT, int S, int seed = 0) {
   NumericMatrix out(S, 2);
   colnames(out) = CharacterVector::create("solo", "pairs");
   
@@ -45,7 +65,7 @@ List ising(NumericMatrix x, double mu, double beta, double kT, int S) {
   int accept = 0;
   
   std::random_device rd;
-  std::mt19937 gen(rd());
+  std::mt19937 gen(seed);
   std::uniform_real_distribution<> runif(0.0, 1.0);
   std::uniform_int_distribution<> dis(0, N - 1);
   double solo_ = solo(x);
@@ -79,6 +99,76 @@ List ising(NumericMatrix x, double mu, double beta, double kT, int S) {
   ret["x"] = x;
   ret["states"] = out;
   ret["accept"] = accept / double(S);
+  return ret;
+}
+
+// [[Rcpp::export]]
+List ising_gibbs(NumericMatrix x,
+                 double mu,
+                 double beta,
+                 double gamma,
+                 double kT,
+                 int S,
+                 int seed = 0) {
+  NumericMatrix out(S, 3);
+  colnames(out) = CharacterVector::create("solo", "pairs", "corners");
+  
+  int N = x.nrow();
+  
+  std::mt19937 gen(seed);
+  std::uniform_real_distribution<> runif(0.0, 1.0);
+  std::uniform_int_distribution<> dis(0, N - 1);
+  double solo_ = solo(x);
+  double pairs_ = pairs(x);
+  double corners_ = corners(x);
+  double E = mu * solo_ + beta * pairs_ + gamma * corners_;
+  for(int s = 0; s < S; s++) {
+    std::vector<int> is(N);
+    std::vector<int> js(N);
+    
+    for(int i = 0; i < N; i++) {
+      is[i] = i;
+      js[i] = i;
+    }
+    
+    std::shuffle(is.begin(), is.end(), gen);
+    std::shuffle(js.begin(), js.end(), gen);
+    
+    for(int ii = 0; ii < is.size(); ii++) {
+      int i = is[ii];
+      for(int jj = 0; jj < js.size(); jj++) {
+        int j = js[jj];
+        
+        double dsolo_ = -2 * x(i, j);
+        double dpairs_ = -2.0 * x(i, j) * x((i + 1) % N, j) +
+          -2.0 * x((i - 1 + N) % N, j) * x(i, j) +
+          -2.0 * x(i, j) * x(i, (j + 1) % N) +
+          -2.0 * x(i, (j - 1 + N) % N) * x(i, j);
+        double dcorners_ = -2.0 * x(i, j) * x((i + 1) % N, (j + 1) % N) +
+          -2.0 * x((i - 1 + N) % N, (j + 1) % N) * x(i, j) +
+          -2.0 * x(i, j) * x((i + 1) % N, (j - 1 + N) % N) +
+          -2.0 * x((i - 1 + N) % N, (j - 1 + N) % N) * x(i, j);
+          
+        double dE = mu * dsolo_ + beta * dpairs_ + gamma * dcorners_;
+        
+        double r = runif(gen);
+        if(r > 1.0 / (1.0 + std::exp(-dE / kT))) {
+          solo_ = solo_ + dsolo_;
+          pairs_ = pairs_ + dpairs_;
+          corners_ = corners_ + dcorners_;
+          x(i, j) = x(i, j) * -1;
+        }
+      }
+    }
+
+    out(s, 0) = solo_;
+    out(s, 1) = pairs_;
+    out(s, 2) = corners_;
+  }
+  
+  List ret;
+  ret["x"] = x;
+  ret["states"] = out;
   return ret;
 }
 
