@@ -46,9 +46,9 @@ out %>% gather(which, value, c(solo, pairs, corners)) %>%
   facet_grid(~ seed)
 
 results = list(mu = seq(-0.5, 0.5, length = 11),
-               beta = seq(-0.5, 0.5, length = 11),
-               gamma = seq(-0.5, 0.5, length = 11),
-               seed = sample(1:1000, 8, replace = F)) %>%
+               beta = seq(0.0, 0.25, length = 11),
+               gamma = seq(0.0, 0.25, length = 11),
+               seed = sample(1:1000, 3, replace = F)) %>%
   expand.grid %>%
   as.tibble %>%
   pmap(function(mu, beta, gamma, seed) {
@@ -56,21 +56,57 @@ results = list(mu = seq(-0.5, 0.5, length = 11),
       summarize(m_phi = mean(solo),
                 d_m_phi_d_beta = -cov(solo, pairs) / kT,
                 d_m_phi_d_gamma = -cov(solo, corners) / kT) %>%
-      mutate(beta = beta, gamma = gamma, seed = seed)
-    }) %>% bind_rows
+      mutate(mu = mu, beta = beta, gamma = gamma, seed = seed)
+    }) %>% bind_rows %>%
+  mutate(seed = factor(seed))
 
-results %>% mutate(angle = atan2(d_m_phi_d_gamma, d_m_phi_d_beta),
-                   length = 0.05,
-                   x = beta - cos(angle) * length / 2.0,
-                   y = gamma - sin(angle) * length / 2.0,
-                   xend = beta + cos(angle) * length / 2.0,
-                   yend = gamma + sin(angle) * length / 2.0,
-                   length = sqrt(d_m_phi_d_gamma^2 + d_m_phi_d_beta^2),
-                   length = 0.05 * length / max(length)) %>%
+beta = 0.10
+gamma = 0.15
+data = results %>% pull(mu) %>% unique %>%
+  map(function(mu) {
+    ising_gibbs(x, mu, beta, gamma, kT, S * 100, 0)$states %>% as.tibble %>%
+      summarize(phi = mean(solo)) %>%
+      mutate(mu = mu)
+  }) %>% bind_rows
+
+results %>% group_by(mu, beta, gamma) %>%
+  summarize(sd_m_phi = sd(m_phi),
+            m_phi = mean(m_phi),
+            sd_d_m_phi_d_beta = sd(d_m_phi_d_beta),
+            d_m_phi_d_beta = mean(d_m_phi_d_beta),
+            sd_d_m_phi_d_gamma = sd(d_m_phi_d_gamma),
+            d_m_phi_d_gamma = mean(d_m_phi_d_gamma))
+
+lpres = results %>% left_join(data) %>%
+  mutate(nlp = 2 * log(abs(m_phi - phi) + 1e-5),
+         dnlp_dbeta = (2 / (abs(m_phi - phi) + 1e-5)) * d_m_phi_d_beta,
+         dnlp_dgamma = (2 / (abs(m_phi - phi) + 1e-5)) * d_m_phi_d_gamma) %>%
+  group_by(beta, gamma, seed) %>%
+  summarize(nlp = sum(nlp),
+            dnlp_dbeta = sum(dnlp_dbeta),
+            dnlp_dgamma = sum(dnlp_dgamma))
+
+mlpres = lpres %>%
+  group_by(beta, gamma) %>%
+  summarize(nlp = mean(nlp))
+
+
+lpres %>%
+  mutate(angle = atan2(dnlp_dgamma, dnlp_dbeta),
+         length = 0.01,
+         x = beta - cos(angle) * length / 2.0,
+         y = gamma - sin(angle) * length / 2.0,
+         xend = beta + cos(angle) * length / 2.0,
+         yend = gamma + sin(angle) * length / 2.0,
+         mag_grad = sqrt(dnlp_dgamma^2 + dnlp_dbeta^2)) %>%
   ggplot(aes(x, y)) +
-  scale_colour_gradientn(colours = rev(rainbow(4))) +
-  geom_segment(aes(xend = xend, yend = yend, color = length),
+  geom_tile(data = mlpres, aes(x = beta, y = gamma, fill = nlp)) +
+  #scale_colour_gradientn(colours = rev(rainbow(4))) +
+  scale_colour_gradientn(colours = rev(terrain.colors(8))) +
+  geom_segment(aes(xend = xend, yend = yend, color = seed),
                arrow = arrow(length = unit(0.01, "npc"))) +
   xlab("beta") + ylab("gamma")
+
+results
 
 + geom_segment(aes(xend=x+dx, yend=y+dy), arrow = arrow(length = unit(0.3,"cm")))
