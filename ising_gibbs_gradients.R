@@ -6,7 +6,7 @@ library(parallel)
 require(Rcpp)
 
 N = 10
-mu = -0.25
+mu = -0.0
 beta = 0.15
 gamm = 0.25
 kT = 1.0
@@ -19,9 +19,21 @@ x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 ising(x, mu, beta, kT, S * N * N, 0)$states %>% as.tibble %>%
   summarize(m_phi = mean(solo),
             sd_phi = sd(solo))
-ising_gibbs(x, mu, beta, 0.0, kT, S * N * N, 0)$states %>% as.tibble %>%
+ising_gibbs(x, mu, beta, 0.0, kT, S, 0)$states %>% as.tibble %>%
   summarize(m_phi = mean(solo),
             sd_phi = sd(solo))
+
+beta = 0.0
+gamma = 0.5
+ising_gibbs(x, mu, beta, gamma, kT, S, 0)$x %>%
+  melt %>%
+  as.tibble %>%
+  ggplot(aes(x = Var1, y = Var2, fill = factor(value))) +  
+  geom_tile() +
+  xlab("x") +
+  ylab("y") +
+  coord_equal() +
+  scale_y_reverse()
 
 out = mclapply(sample(1:1000, 8, replace = F), function(s) {
   ising_gibbs(x, mu, beta, gamm, kT, S, s)$states %>% as.tibble %>%
@@ -104,10 +116,10 @@ lpres %>%
          xend = beta + cos(angle) * length / 2.0,
          yend = gamma + sin(angle) * length / 2.0) %>%
   ggplot(aes(x, y)) +
-  #scale_fill_gradientn(colours = rev(terrain.colors(8))) +
-  geom_tile(data = mlpres, aes(x = beta, y = gamma, fill = log(nlp))) +
-  #scale_fill_gradientn(colours = rev(rainbow(4))) +
-  geom_segment(aes(xend = xend, yend = yend), alpha = 0.25,
+  geom_tile(data = mlpres, aes(x = beta, y = gamma, fill = nlp)) +
+  #scale_colour_gradientn(colours = rev(rainbow(4))) +
+  #scale_colour_gradientn(colours = rev(terrain.colors(8))) +
+  geom_segment(aes(xend = xend, yend = yend, color = seed),
                arrow = arrow(length = unit(0.01, "npc"))) +
   xlab("beta") + ylab("gamma") +
   geom_point(data = as.tibble(list(beta = beta, gamma = gamma)),
