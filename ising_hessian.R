@@ -143,7 +143,7 @@ mlpres %>% filter(beta > 0.0 & gamma > 0.0) %>%
            d2dbg * (beta - betaRef) * (gamma - gammaRef)) %>%
   gather(type, value, c(nlp, loss)) %>%
   ggplot() +
-  geom_tile(aes(x = beta, y = gamma, fill = value), bins = 20) +
+  geom_contour(aes(x = beta, y = gamma, z = value), bins = 20) +
   xlab("beta") + ylab("gamma") +
   coord_equal() +
   facet_grid(. ~ type)

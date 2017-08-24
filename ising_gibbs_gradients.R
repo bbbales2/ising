@@ -57,31 +57,45 @@ out %>% gather(which, value, c(solo, pairs, corners)) %>%
   geom_point(aes(color = which)) +
   facet_grid(~ seed)
 
+<<<<<<< HEAD
 # This is the output for the grid of test parameters
 results = list(mu = seq(-0.5, 0.5, length = 11),
                beta = seq(-0.25, 0.75, length = 21),
                gamma = seq(-0.25, 0.75, length = 21),
                seed = sample(1:1000, 8, replace = F)) %>%
+=======
+results = list(mu = seq(-5.0, 5.0, length = 21),
+               beta = seq(-1.0, 1.0, length = 21),
+               gamma = seq(-1.0, 1.0, length = 21),
+               seed = sample(1:1000, 4, replace = F)) %>%
+>>>>>>> e343e568d0c804e614aa66c27cca47f8acc59a00
   expand.grid %>%
   as.tibble %>%
   pmap(function(mu, beta, gamma, seed) {
     ising_gibbs(x, mu, beta, gamma, kT, S, seed)$states %>% as.tibble %>%
-      summarize(m_phi = mean(solo),
-                d_m_phi_d_beta = -cov(solo, pairs) / kT,
-                d_m_phi_d_gamma = -cov(solo, corners) / kT) %>%
-      mutate(mu = mu, beta = beta, gamma = gamma, seed = seed)
+      summarize(m_phi = mean(solo) / N^2,
+                d_m_phi_d_beta = -cov(solo, pairs) / kT / N^2,
+                d_m_phi_d_gamma = -cov(solo, corners) / kT / N^2) %>%
+      mutate(mu = mu, beta = beta, gamma = gamma, seed = seed, S = S)
     }) %>% bind_rows %>%
   mutate(seed = factor(seed))
 
+<<<<<<< HEAD
 # This is the output for the reference parameters
 beta = 0.25
+=======
+beta = 0.3
+>>>>>>> e343e568d0c804e614aa66c27cca47f8acc59a00
 gamma = 0.0
 data = results %>% pull(mu) %>% unique %>%
   map(function(mu) {
-    ising_gibbs(x, mu, beta, gamma, kT, S * 100, 0)$states %>% as.tibble %>%
-      summarize(phi = mean(solo)) %>%
+    ising_gibbs(x, mu, beta, gamma, kT, S * 10, 0)$states %>% as.tibble %>%
+      summarize(phi = mean(solo) / N^2) %>%
       mutate(mu = mu)
   }) %>% bind_rows
+
+data %>% ggplot(aes(mu, phi)) +
+  geom_point()
 
 results %>% group_by(mu, beta, gamma) %>%
   summarize(sd_m_phi = sd(m_phi),
@@ -92,34 +106,48 @@ results %>% group_by(mu, beta, gamma) %>%
             d_m_phi_d_gamma = mean(d_m_phi_d_gamma))
 
 lpres = results %>% left_join(data) %>%
-  mutate(nlp = 2 * log(abs(m_phi - phi) + 1e-5),
-         dnlp_dbeta = -(2 * ((m_phi - phi) + 1e-5)) * d_m_phi_d_beta,
-         dnlp_dgamma = -(2 * ((m_phi - phi) + 1e-5)) * d_m_phi_d_gamma) %>%
+  mutate(nlp = (m_phi - phi)^2,
+         dnlp_dbeta = 2 * (m_phi - phi) * d_m_phi_d_beta,
+         dnlp_dgamma = 2 * (m_phi - phi) * d_m_phi_d_gamma) %>%
   group_by(beta, gamma, seed) %>%
   summarize(nlp = sum(nlp),
             dnlp_dbeta = sum(dnlp_dbeta),
-            dnlp_dgamma = sum(dnlp_dgamma))
+            dnlp_dgamma = sum(dnlp_dgamma)) %>%
+  ungroup()
 
 mlpres = lpres %>%
   group_by(beta, gamma) %>%
   summarize(nlp = mean(nlp))
 
 lpres %>%
-  mutate(angle = atan2(dnlp_dgamma, dnlp_dbeta),
-         length = 0.02,
+  mutate(angle = atan2(-dnlp_dgamma, -dnlp_dbeta),
+         mag = sqrt(dnlp_dgamma^2 + dnlp_dbeta^2)) %>%
+  #filter(log(nlp) < 7.5) %>%
+  mutate(length = 0.025 * mag / max(mag),
          x = beta - cos(angle) * length / 2.0,
          y = gamma - sin(angle) * length / 2.0,
          xend = beta + cos(angle) * length / 2.0,
-         yend = gamma + sin(angle) * length / 2.0,
-         mag_grad = sqrt(dnlp_dgamma^2 + dnlp_dbeta^2)) %>%
+         yend = gamma + sin(angle) * length / 2.0) %>%
   ggplot(aes(x, y)) +
   geom_tile(data = mlpres, aes(x = beta, y = gamma, fill = nlp)) +
   #scale_colour_gradientn(colours = rev(rainbow(4))) +
   #scale_colour_gradientn(colours = rev(terrain.colors(8))) +
   geom_segment(aes(xend = xend, yend = yend, color = seed),
-               arrow = arrow(length = unit(0.01, "npc")), alpha = 0.25) +
-  #scale_color_manual(values=c("white", "red", "pink")) +
-  xlab("beta") + ylab("gamma")
+               arrow = arrow(length = unit(0.01, "npc"))) +
+  xlab("beta") + ylab("gamma") +
+  geom_point(data = as.tibble(list(beta = beta, gamma = gamma)),
+             aes(x = beta, y = gamma), color = "red", shape = "x", size = 5.0) +
+  ggtitle("Truth at red x")
+
+lpres %>%
+  mutate(angle = atan2(-dnlp_dgamma, -dnlp_dbeta),
+         mag = sqrt(dnlp_dgamma^2 + dnlp_dbeta^2)) %>%
+  mutate(length = 0.01 * mag / max(mag),
+         x = beta - cos(angle) * length / 2.0,
+         y = gamma - sin(angle) * length / 2.0,
+         xend = beta + cos(angle) * length / 2.0,
+         yend = gamma + sin(angle) * length / 2.0) %>%
+  arrange(length)
 
 results
 
