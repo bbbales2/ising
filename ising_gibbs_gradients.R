@@ -57,18 +57,11 @@ out %>% gather(which, value, c(solo, pairs, corners)) %>%
   geom_point(aes(color = which)) +
   facet_grid(~ seed)
 
-<<<<<<< HEAD
 # This is the output for the grid of test parameters
-results = list(mu = seq(-0.5, 0.5, length = 11),
-               beta = seq(-0.25, 0.75, length = 21),
-               gamma = seq(-0.25, 0.75, length = 21),
-               seed = sample(1:1000, 8, replace = F)) %>%
-=======
 results = list(mu = seq(-5.0, 5.0, length = 21),
-               beta = seq(-1.0, 1.0, length = 21),
-               gamma = seq(-1.0, 1.0, length = 21),
+               beta = seq(0.0, 1.0, length = 21),
+               gamma = seq(0.0, 1.0, length = 21),
                seed = sample(1:1000, 4, replace = F)) %>%
->>>>>>> e343e568d0c804e614aa66c27cca47f8acc59a00
   expand.grid %>%
   as.tibble %>%
   pmap(function(mu, beta, gamma, seed) {
@@ -80,13 +73,9 @@ results = list(mu = seq(-5.0, 5.0, length = 21),
     }) %>% bind_rows %>%
   mutate(seed = factor(seed))
 
-<<<<<<< HEAD
 # This is the output for the reference parameters
 beta = 0.25
-=======
-beta = 0.3
->>>>>>> e343e568d0c804e614aa66c27cca47f8acc59a00
-gamma = 0.0
+gamma = 0.25
 data = results %>% pull(mu) %>% unique %>%
   map(function(mu) {
     ising_gibbs(x, mu, beta, gamma, kT, S * 10, 0)$states %>% as.tibble %>%

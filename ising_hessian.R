@@ -64,8 +64,8 @@ out %>% gather(which, value, c(solo, pairs, corners)) %>%
   facet_grid(~ seed)
 
 results = list(mu = seq(-0.5, 0.5, length = 11),
-            beta = seq(0.0, 0.75, length = 21),
-            gamma = seq(0.0, 0.75, length = 21),
+            beta = seq(0.10, 0.15, length = 21),
+            gamma = seq(0.10, 0.15, length = 21),
             seed = sample(1:1000, 3, replace = F)) %>%
   expand.grid %>%
   as.tibble %>%
@@ -76,8 +76,8 @@ results = list(mu = seq(-0.5, 0.5, length = 11),
   }) %>% bind_rows %>%
   mutate(seed = factor(seed))
 
-betaRef = 0.4125#results %>% pull(beta) %>% unique %>% median
-gammaRef = 0.2250#results %>% pull(gamma) %>% unique %>% min
+betaRef = results %>% pull(beta) %>% unique %>% median#0.4125#results %>% pull(beta) %>% unique %>% median
+gammaRef = results %>% pull(beta) %>% unique %>% median#0.2250#results %>% pull(gamma) %>% unique %>% min
 data = results %>% pull(mu) %>% unique %>%
   map(function(mu) {
     ising_gibbs(x, mu, betaRef, gammaRef, kT, S * 1000, 0)$states %>% as.tibble %>%
