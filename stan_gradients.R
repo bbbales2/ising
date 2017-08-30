@@ -6,9 +6,9 @@ library(parallel)
 require(Rcpp)
 
 N = 10
-mu = -0.0
-beta = 0.15
-gamm = 0.25
+mu = 0.0
+betas = seq(0.0, 0.75, length = 21)
+gammas = seq(0.0, 0.75, length = 21)
 kT = 1.0
 sigma = 0.01
 S = 100
@@ -17,45 +17,56 @@ sourceCpp("ising.cpp")
 
 # This is the output for the grid of test parameters
 results = list(mu = seq(-5.0, 5.0, length = 21),
-               beta = seq(0.0, 1.0, length = 21),
-               gamma = seq(0.0, 1.0, length = 21),
+               beta = betas,
+               gamma = gammas,
                seed = sample(1:1000, 4, replace = F)) %>%
   expand.grid %>%
   as.tibble %>%
   pmap(function(mu, beta, gamma, seed) {
     ising_gibbs(x, mu, beta, gamma, kT, S, seed)$states %>% as.tibble %>%
-      summarize(m_phi = mean(solo) / N^2,
-                d_m_phi_d_beta = -cov(solo, pairs) / kT / N^2,
-                d_m_phi_d_gamma = -cov(solo, corners) / kT / N^2) %>%
+      summarize(mphi = mean(solo) / N^2,
+                dmphi_dbeta = -cov(solo, pairs) / kT / N^2,
+                dmphi_dgamma = -cov(solo, corners) / kT / N^2) %>%
       mutate(mu = mu, beta = beta, gamma = gamma, seed = seed, S = S)
   }) %>% bind_rows %>%
   mutate(seed = factor(seed))
 
 # This is the output for the reference parameters
-beta = 0.1
-gamma = 0.5
-data = results %>% pull(mu) %>% unique %>%
-  map(function(mu) {
-    ising_gibbs(x, mu, beta, gamma, kT, S * 10, 0)$states %>% as.tibble %>%
-      summarize(phi = mean(solo) / N^2) %>%
-      mutate(mu = mu)
+betaRef = betas[which.min(abs(betas - 0.1))]
+gammaRef = gammas[which.min(abs(gammas - 0.5))]
+dataS = list(mu = results %>% pull(mu) %>% unique,
+             seed = sample(1:1000, 4, replace = F)) %>%
+  expand.grid %>%
+  as.tibble %>%
+  pmap(function(mu, seed) {
+    ising_gibbs(x, mu, betaRef, gammaRef, kT, S * 100, seed)$states %>% as.tibble %>%
+      summarize(phi = mean(solo) / N^2,
+                dmphi_dbeta = -cov(solo, pairs) / kT / N^2,
+                dmphi_dgamma = -cov(solo, corners) / kT / N^2,
+                d2mphi_dbeta2 = (mean(solo * pairs^2) +
+                  -mean(solo * pairs) * mean(pairs) +
+                  -cov(solo, pairs) * mean(pairs) +
+                  -var(pairs) * mean(solo)) / N^2,
+                d2mphi_dgamma2 = (mean(solo * corners^2) +
+                  -mean(solo * corners) * mean(corners) +
+                  -cov(solo, corners) * mean(corners) +
+                  -var(corners) * mean(solo)) / N^2,
+                d2mphi_dbetadgamma = (mean(solo * pairs * corners) +
+                  -mean(solo * pairs) * mean(corners) +
+                  -cov(solo, corners) * mean(pairs) +
+                  -cov(corners, pairs) * mean(solo)) / N^2) %>%
+      mutate(mu = mu, seed = seed)
   }) %>% bind_rows
+
+data = dataS %>% group_by(mu) %>% summarize_at(vars(everything()), mean) %>% select(-seed)
 
 fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$phi, sigma = 0.1), iter = 10)
 fit_mvn = stan('models/mvn.stan', data = list(N = nrow(data), y = data$phi, x = data$mu, sigma = 0.1, l = 0.5), iter = 10)
-m_phi = results %>% filter(seed == 700 & beta == 0 & gamma == 0) %>% pull(m_phi)
-grad_log_prob(fit_iid, m_phi)
-grad_log_prob(fit_mvn, m_phi)
-
-data %>% ggplot(aes(mu, phi)) +
-  geom_point()
-
-results %>% select(beta, gamma) %>% unique
 
 lpres = results %>% group_by(beta, gamma, seed) %>%
-  summarize(nlp = -log_prob(fit_mvn, m_phi),
-            dnlp_dbeta = -grad_log_prob(fit_mvn, m_phi) %*% d_m_phi_d_beta,
-            dnlp_dgamma = -grad_log_prob(fit_mvn, m_phi) %*% d_m_phi_d_gamma)
+  summarize(nlp = -log_prob(fit_iid, mphi),
+            dnlp_dbeta = -grad_log_prob(fit_iid, mphi) %*% dmphi_dbeta,
+            dnlp_dgamma = -grad_log_prob(fit_iid, mphi) %*% dmphi_dgamma)
 
 mlpres = lpres %>%
   group_by(beta, gamma) %>%
@@ -77,20 +88,44 @@ lpres %>%
   geom_segment(aes(xend = xend, yend = yend, alpha = 0.25),
                arrow = arrow(length = unit(0.01, "npc"))) +
   xlab("beta") + ylab("gamma") +
-  geom_point(data = as.tibble(list(beta = beta, gamma = gamma)),
+  geom_point(data = as.tibble(list(beta = betaRef, gamma = gammaRef)),
              aes(x = beta, y = gamma), color = "red", shape = "x", size = 5.0) +
-  ggtitle(paste("Contours of negative log probability\nTruth at red x, beta = ", beta, ", gamma = ", gamma))
+  ggtitle(paste("Contours of negative log probability\nTruth at red x, beta = ", betaRef, ", gamma = ", gammaRef))
 
-lpres %>%
-  mutate(angle = atan2(-dnlp_dgamma, -dnlp_dbeta),
-         mag = sqrt(dnlp_dgamma^2 + dnlp_dbeta^2)) %>%
-  mutate(length = 0.01 * mag / max(mag),
-         x = beta - cos(angle) * length / 2.0,
-         y = gamma - sin(angle) * length / 2.0,
-         xend = beta + cos(angle) * length / 2.0,
-         yend = gamma + sin(angle) * length / 2.0) %>%
-  arrange(length)
+# Laplace approximation stuff
+dataS %>% group_by(mu) %>% select(d2mphi_dbeta2) %>% summarize_all(funs(mean, sd))
+loss = results %>% filter(beta == betaRef, gamma == gammaRef) %>%
+  group_by(mu) %>% summarize_at(vars(everything()), mean) %>%
+  select(-seed, -dmphi_dbeta, -dmphi_dgamma) %>%
+  left_join(data, by = "mu") %>%
+  mutate(nlp = (mphi - phi)^2,
+         dnlp_dbeta = 2 * (mphi - phi) * dmphi_dbeta,
+         dnlp_dgamma = 2 * (mphi - phi) * dmphi_dgamma,
+         d2nlp_dbeta2 = 2 * dmphi_dbeta^2 + 2 * (mphi - phi) * d2mphi_dbeta2,
+         d2nlp_dgamma2 = 2 * dmphi_dgamma^2 + 2 * (mphi - phi) * d2mphi_dgamma2,
+         d2nlp_dbetadgamma = 2 * dmphi_dbeta * dmphi_dgamma + 2 * (mphi - phi) * d2mphi_dbetadgamma) %>%
+  summarize(nlp = sum(nlp),
+            dnlp_dbeta = sum(dnlp_dbeta),
+            dnlp_dgamma = sum(dnlp_dgamma),
+            d2nlp_dbeta2 = sum(d2nlp_dbeta2),
+            d2nlp_dgamma2 = sum(d2nlp_dgamma2),
+            d2nlp_dbetadgamma = sum(d2nlp_dbetadgamma))
 
-results
-
-+ geom_segment(aes(xend=x+dx, yend=y+dy), arrow = arrow(length = unit(0.3,"cm")))
+#lpres = 
+results %>% group_by(mu, beta, gamma) %>% select(mu, mphi) %>%
+  summarize_at(vars(everything()), mean) %>%
+  left_join(data, by = "mu") %>%
+  mutate(nlp = (mphi - phi)^2) %>%
+  group_by(beta, gamma) %>%
+  summarize(nlp = sum(nlp)) %>%
+  ungroup() %>%
+  mutate(loss = 0.5 * loss$d2nlp_dgamma2 * (gamma - gammaRef)^2 +
+           0.5 * loss$d2nlp_dbeta2 * (beta - betaRef)^2 +
+           loss$d2nlp_dbetadgamma * (beta - betaRef) * (gamma - gammaRef)) %>%
+  ggplot(aes(x = beta, y = gamma)) +
+  geom_contour(aes(z = loss), bins = 100, color = "red") +
+  geom_contour(aes(z = nlp), bins = 100) +
+  xlab("beta") + ylab("gamma") +
+  geom_point(data = as.tibble(list(beta = betaRef, gamma = gammaRef)),
+             aes(x = beta, y = gamma), color = "red", shape = "x", size = 5.0) +
+  ggtitle(paste("Contours of negative log probability\nTruth at red x, beta = ", betaRef, ", gamma = ", gammaRef))

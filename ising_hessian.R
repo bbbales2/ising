@@ -89,7 +89,7 @@ data = results %>% pull(mu) %>% unique %>%
                   -cov(solo, pairs) * mean(pairs) +
                   -var(pairs) * mean(solo),
                 d2mphi_dbetadgamma = mean(solo * pairs * corners) +
-                  -mean(solo * pairs) * mean(solo) +
+                  -mean(solo * pairs) * mean(corners) +
                   -cov(solo, corners) * mean(pairs) +
                   -cov(solo, pairs) * mean(corners),
                 d2mphi_dgamma2 = mean(solo * corners^2) +
