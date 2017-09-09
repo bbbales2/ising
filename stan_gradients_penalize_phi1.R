@@ -7,15 +7,17 @@ require(Rcpp)
 
 N = 10
 mu = 0.0
-betas = seq(0.0, 0.75, length = 21)
-gammas = seq(0.0, 0.75, length = 21)
+betas = seq(-0.5, 0.75, length = 21)
+gammas = seq(-0.5, 0.75, length = 21)
 kT = 1.0
 sigma = 0.01
 S = 100
 
 sourceCpp("ising.cpp")
 
+ising_gibbs(x, mu, 0.5, -0.25, kT, S, 0)$x
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
+
 # This is the output for the grid of test parameters
 results = list(mu = seq(-5.0, 5.0, length = 21),
                beta = betas,

@@ -7,13 +7,13 @@ require(Rcpp)
 
 N = 10
 mu = 0.0
-betas = seq(0.0, 0.75, length = 21)
-gammas = seq(0.0, 0.75, length = 21)
+betas = seq(-0.5, 0.75, length = 21)
+gammas = seq(-0.5, 0.75, length = 21)
 kT = 1.0
 sigma = 0.01
 S = 100
 
-sourceCpp("ising.cpp")
+source("ising_helpers.R")
 
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 # This is the output for the grid of test parameters
@@ -23,43 +23,33 @@ results = list(mu = seq(-5.0, 5.0, length = 21),
                seed = sample(1:1000, 4, replace = F)) %>%
   expand.grid %>%
   as.tibble %>%
-  pmap(function(mu, beta, gamma, seed) {
-    ising_gibbs(x, mu, beta, gamma, kT, S, seed)$states %>% as.tibble %>%
-      summarize(mphi = mean(solo) / N^2,
-                dmphi_dbeta = -cov(solo, pairs) / kT / N^2,
-                dmphi_dgamma = -cov(solo, corners) / kT / N^2) %>%
-      mutate(mu = mu, beta = beta, gamma = gamma, seed = seed, S = S)
-  }) %>% bind_rows %>%
+  (function(df) split(df, 1:nrow(df))) %>%
+  mclapply(function(row) {
+    ising_gibbs_derivs(x, row$mu, row$beta, row$gamma, kT, S, row$seed) %>%
+      mutate(mu = row$mu, beta = row$beta, gamma = row$gamma, seed = row$seed, S = S)
+  }, mc.cores = 24) %>%
+  bind_rows %>%
   mutate(seed = factor(seed))
 
 # This is the output for the reference parameters
 betaRef = betas[which.min(abs(betas - 0.1))]
 gammaRef = gammas[which.min(abs(gammas - 0.5))]
-dataS = list(mu = results %>% pull(mu) %>% unique,
+dataS = (list(mu = results %>% pull(mu) %>% unique,
              seed = sample(1:1000, 4, replace = F)) %>%
   expand.grid %>%
   as.tibble %>%
-  pmap(function(mu, seed) {
-    ising_gibbs(x, mu, betaRef, gammaRef, kT, S * 100, seed)$states %>% as.tibble %>%
-      summarize(phi = mean(solo) / N^2,
-                dmphi_dbeta = -cov(solo, pairs) / kT / N^2,
-                dmphi_dgamma = -cov(solo, corners) / kT / N^2,
-                d2mphi_dbeta2 = (mean(solo * pairs^2) +
-                  -mean(solo * pairs) * mean(pairs) +
-                  -cov(solo, pairs) * mean(pairs) +
-                  -var(pairs) * mean(solo)) / N^2,
-                d2mphi_dgamma2 = (mean(solo * corners^2) +
-                  -mean(solo * corners) * mean(corners) +
-                  -cov(solo, corners) * mean(corners) +
-                  -var(corners) * mean(solo)) / N^2,
-                d2mphi_dbetadgamma = (mean(solo * pairs * corners) +
-                  -mean(solo * pairs) * mean(corners) +
-                  -cov(solo, corners) * mean(pairs) +
-                  -cov(corners, pairs) * mean(solo)) / N^2) %>%
-      mutate(mu = mu, seed = seed)
-  }) %>% bind_rows
+  (function(df) split(df, 1:nrow(df)))) %>%
+  mclapply(function(row) {
+    ising_gibbs_derivs(x, row$mu, betaRef, gammaRef, kT, S * 100, row$seed) %>% 
+      mutate(mu = row$mu, seed = row$seed)
+  }, mc.cores = 24) %>% bind_rows
 
-data = dataS %>% group_by(mu) %>% summarize_at(vars(everything()), mean) %>% select(-seed)
+data = dataS %>%
+  group_by(mu) %>%
+  summarize_at(vars(everything()), mean) %>%
+  rename(phi = mphi) %>%
+  select(-seed) %>%
+  select(mu, phi)
 
 fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$phi, sigma = 0.1), iter = 10)
 fit_mvn = stan('models/mvn.stan', data = list(N = nrow(data), y = data$phi, x = data$mu, sigma = 0.1, l = 0.5), iter = 10)
@@ -95,7 +85,7 @@ lpres %>%
 dataS %>% group_by(mu) %>% select(d2mphi_dbeta2) %>% summarize_all(funs(mean, sd))
 loss = results %>% filter(beta == betaRef, gamma == gammaRef) %>%
   group_by(mu) %>% summarize_at(vars(everything()), mean) %>%
-  select(-seed, -dmphi_dbeta, -dmphi_dgamma) %>%
+  select(-seed) %>%
   left_join(data, by = "mu") %>%
   mutate(nlp = (mphi - phi)^2,
          dnlp_dbeta = 2 * (mphi - phi) * dmphi_dbeta,
