@@ -3,7 +3,15 @@ library(tidyverse)
 library(stringr)
 
 runMC = function(path) {
-  system("(cd /home/bbales2/casm/cubic_3d; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)")
+  system(paste0("(cd ",
+                path,
+                "; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)"))
+}
+
+getResults = function(path) {
+  df = fromJSON(paste0(path, "/results.json")) %>% as.tibble
+  colnames(df) = gsub('[<>\\(\\),]', '', colnames(df))
+  df
 }
 
 getCorrs = function(path) {
@@ -13,19 +21,17 @@ getCorrs = function(path) {
 
   dfs = list()  
   for(i in 1:length(files)) {
-    df = fromJSON(paste0(path, files[[i]], "/observations.json.gz")) %>% as.tibble %>%
+    df = fromJSON(paste0(path, "/", files[[i]], "/observations.json.gz")) %>% as.tibble %>%
       select(starts_with("corr"))
     
     colnames(df) = gsub('[\\(\\)]', '', colnames(df))
     colNumbers = order(as.numeric(gsub('^corr([0123456789]*)$', '\\1', colnames(df))))
     dfs[[i]] = df %>% select(noquote(colnames(df)[colNumbers])) %>%
-      mutate(t = i)
+      mutate(t = i, mci = row_number())
   }
   
   dfs %>% bind_rows %>% select(t, everything())
 }
-
-#getResults("/home/bbales2/casm/cubic_3d/")
 
 getECIs = function(path) {
   fpath = paste0(path, "/cluster_expansions/clex.formation_energy/calctype.default/ref.default/bset.default/eci.default/eci.json")
