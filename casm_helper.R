@@ -40,6 +40,7 @@ getECIs = function(path) {
   if(is.null(out)) {
     out = rep(0, nrow(a$cluster_functions))
   }
+  out[is.na(out)] = 0.0
   out
 }
 
