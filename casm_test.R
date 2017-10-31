@@ -10,8 +10,8 @@ library(rstan)
 library(stats)
 library(parallel)
 
-path = "/home/bbales2/casm/triangle_2d"
-setECIs(path, c(0.0, 0.0, 0.5, 0.0))
+path = "/home/bbales2/casm/cubic_2d"
+setECIs(path, c(0.0, 0.0, 1.0, 0.5, 1.0))
 runMC(path)
 corrs = getCorrs(path)
 results = getResults(path)
