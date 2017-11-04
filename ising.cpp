@@ -16,11 +16,6 @@ using namespace Rcpp;
 // [[Rcpp::plugins(cpp11)]]
 
 // [[Rcpp::export]]
-int modtest(int v) {
-  return (v + 5) % 5;
-}
-
-// [[Rcpp::export]]
 double solo(NumericMatrix x) {
   double total = 0.0;
   for(int i = 0; i < x.nrow(); i++) {
