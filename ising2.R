@@ -4,6 +4,7 @@ library(ggplot2)
 library(rstan)
 library(parallel)
 require(Rcpp)
+library(GGally)
 
 N = 10
 sigma = 0.01
@@ -26,27 +27,43 @@ ising_sweep = function(x, beta, S) {
       ising_gibbs_derivs(x, row$mu, beta, S, row$seed) %>%
         mutate(mu = row$mu, seed = row$seed, S = S) %>%
         mutate(!!!beta)
-      }, mc.cores = 12) %>%
+      }, mc.cores = 24) %>%
     bind_rows %>%
     mutate(seed = factor(seed))
 }
 
 samples = list()
 
-for(i in 1:10000) {
-  beta = rnorm(5, 0.0, 0.25)
+for(i in 1:1000) {
+  beta = rnorm(5, 0.0, 1.0)
   names(beta) = c("b0", "b1", "b2", "b3", "b4")
-  samples[[i]] = ising_sweep(x, beta, S)
+  samples[[i]] = ising_sweep(x, beta, S) %>% mutate(sample = i)
   print(i)
 }
 
-fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$phi, sigma = 0.1), iter = 10)
-fit_mvn = stan('models/mvn.stan', data = list(N = nrow(data), y = data$phi, x = data$mu, sigma = 0.1, l = 0.5), iter = 10)
+df = bind_rows(samples)
 
-lpres = results %>% group_by(beta, gamma, seed) %>%
-  summarize(nlp = -log_prob(fit_iid, mphi),
-            dnlp_dbeta = -grad_log_prob(fit_iid, mphi) %*% dmphi_dbeta,
-            dnlp_dgamma = -grad_log_prob(fit_iid, mphi) %*% dmphi_dgamma)
+beta = rnorm(5, 0.1, 0.25)
+names(beta) = c("b0", "b1", "b2", "b3", "b4")
+data = ising_sweep(x, beta, S) %>% mutate(sample = 0) %>% filter(seed == 1) %>% select(-starts_with("dX0"))
+
+fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$X0, sigma = 0.1), iter = 10)
+
+(df %>% group_by(sample, seed) %>%
+  summarize(nlp = -log_prob(fit_iid, X0),
+            b0 = b0[1],
+            b1 = b1[1],
+            b2 = b2[1],
+            b3 = b3[1],
+            b4 = b4[1]) -> dfn) %>%
+  ungroup() %>%
+  select(-sample, -seed, -nlp) %>%
+  summary()
+
+  ungroup() %>%
+  select(-sample) %>%
+  filter(nlp < 1.0) %>%
+  ggpairs()
 
 mlpres = lpres %>%
   group_by(beta, gamma) %>%
