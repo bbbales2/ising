@@ -66,12 +66,17 @@ List ising_gibbs(NumericMatrix x, double mu, NumericVector beta, int S,
   const int ois[] = { -1, -1, -2, -2, -2 };
   const int ojs[] = { 0, 1, 0, 1, 2 };
 
-  std::vector<int> is(beta.size());
-  std::vector<int> js(beta.size());
+  std::vector<int> is(x.size());
+  std::vector<int> js(x.size());
+  
+  std::vector<int> idxs(x.size());
 
-  for(int i = 0; i < beta.size(); i++) {
-    is[i] = i;
-    js[i] = i;
+  for(int j = 0; j < x.ncol(); j++) {
+    for(int i = 0; i < x.nrow(); i++) {
+      idxs[i + j * x.nrow()] = i + j * x.nrow();
+      is[i + j * x.nrow()] = i;
+      js[i + j * x.nrow()] = j;
+    }
   }
 
   std::mt19937 gen(seed);
@@ -84,27 +89,24 @@ List ising_gibbs(NumericMatrix x, double mu, NumericVector beta, int S,
     Q(k) = pairs(x, ois[k], ojs[k]);
   
   for(int s = 0; s < S; s++) {
-    std::shuffle(is.begin(), is.end(), gen);
-    std::shuffle(js.begin(), js.end(), gen);
+    std::shuffle(idxs.begin(), idxs.end(), gen);
 
-    for(int ii = 0; ii < is.size(); ii++) {
-      int i = is[ii];
-      for(int jj = 0; jj < js.size(); jj++) {
-        int j = js[jj];
+    for(int idx : idxs) {
+      int i = is[idx];
+      int j = js[idx];
 
-        double dX0 = -2 * x(i, j);
-        NumericVector dQ(beta.size());
-        for(int k = 0; k < beta.size(); k++)
-          dQ(k) = -2 * dpairs(x, i, j, ois[k], ojs[k]);
-        double dE = mu * dX0 + std::inner_product(beta.begin(), beta.end(),
-                                                  dQ.begin(), 0.0);
+      double dX0 = -2 * x(i, j);
+      NumericVector dQ(beta.size());
+      for(int k = 0; k < beta.size(); k++)
+        dQ(k) = -2 * dpairs(x, i, j, ois[k], ojs[k]);
+      double dE = mu * dX0 + std::inner_product(beta.begin(), beta.end(),
+                                                dQ.begin(), 0.0);
 
-        double r = runif(gen);
-        if(r > 1.0 / (1.0 + std::exp(-dE))) {
-          X0 += dX0;
-          Q += dQ;
-          x(i, j) = x(i, j) * -1;
-        }
+      double r = runif(gen);
+      if(r > 1.0 / (1.0 + std::exp(-dE))) {
+        X0 += dX0;
+        Q += dQ;
+        x(i, j) = x(i, j) * -1;
       }
     }
 

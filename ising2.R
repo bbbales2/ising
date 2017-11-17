@@ -6,15 +6,26 @@ library(parallel)
 require(Rcpp)
 library(GGally)
 
-N = 10
+p = function(x) {
+  as.tibble(melt(x)) %>%
+    ggplot(aes(x = Var1, y = Var2, fill = factor(value))) +  
+    geom_tile() +
+    xlab("x") +
+    ylab("y") +
+    coord_equal() +
+    scale_y_reverse()
+}
+
+N = factorial(5)
 sigma = 0.01
-S = 1000
+S = 100
+beta = rnorm(5, 0.0, 1.0)
 
 source("ising_helpers2.R")
 
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 
-ising_gibbs_derivs(x, 0.0, beta, S, 1)
+(ising_gibbs(x, 0.95, c(-1.0, 1.0, 1.0, 1.0, 1.0), S, 1) -> out)$x %>% p
 
 # This is the output for the grid of test parameters
 ising_sweep = function(x, beta, S) {
