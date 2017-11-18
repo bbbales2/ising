@@ -14,7 +14,9 @@ radford = function (UgradU, epsilon, L, current_q)
     # Make a full step for the momentum, except at end of trajectory
     ug = UgradU(q)
     
-    print(paste(q, p, ug$u, ugc$u, sum(p^2) / 2, sum(current_p^2) / 2))
+    cat(ug$u, "|", q, "\n")
+    
+    #print(paste(q, p, ug$u, ugc$u, sum(p^2) / 2, sum(current_p^2) / 2))
     if (i!=L) {
       p = p - epsilon * ug$dudq
     }
@@ -31,15 +33,15 @@ radford = function (UgradU, epsilon, L, current_q)
   proposed_K = sum(p^2) / 2
   # Accept or reject the state at end of trajectory, returning either
   # the position at the end of the trajectory or the initial position
-  print(current_U + current_K)
-  print(proposed_U + proposed_K)
-  print(proposed_K)
-  if (runif(1) < exp(current_U-proposed_U+current_K-proposed_K))
-  {
-    return (q) # accept
-  }
-  else
-  {
-    return (current_q) # reject
-  }
+  #print(current_U + current_K)
+  #print(proposed_U + proposed_K)
+  #print(proposed_K)
+  #if (runif(1) < exp(current_U-proposed_U+current_K-proposed_K))
+  #{
+  return (q) # accept
+  #}
+  #else
+  #{
+  #  return (current_q) # reject
+  #}
 }

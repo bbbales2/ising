@@ -70,15 +70,27 @@ fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$X0, sigma
 
 b = rnorm(5, 0.1, 0.25)
 names(b) = c("b0", "b1", "b2", "b3", "b4")
-for(i in 1:100) {
+source('radford.R')
+
+UgradU = function(b) {
   df = ising_sweep(x, b, S, sample(10000000, 1))
   
   grad = grad_log_prob(fit_iid, df$X0)
-  db = df %>% gather(var, y, starts_with("dX0")) %>%
-    group_by(var) %>%
-    mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
-    summarize(y = y %*% grad,
-              yh = yh %*% grad) %>% pull(yh)
+  
+  list(u = -attr(grad, "log_prob"),
+       dudq = -df %>% gather(var, y, starts_with("dX0")) %>%
+       group_by(var) %>%
+       mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+       summarize(y = y %*% grad,
+                 yh = yh %*% grad) %>% pull(yh))
+}
+
+(b = radford(UgradU, 1e-3, 50, b))
+
+for(i in 1:10) {
+  
+  
+  
   
   cat(attr(grad, "log_prob"), "|", b, "|", db, "\n")
   
@@ -89,7 +101,7 @@ for(i in 1:100) {
   print(g)
   Sys.sleep(0)
   
-  b = b + 0.01 * db / sqrt(sum(db^2))
+  b = b + 0.05 * db / sqrt(sum(db^2))
 }
 
 lp = log_prob(fit_iid, df$X0)
@@ -108,15 +120,7 @@ for(i in 1:5) {
   } else {
     cat("reject\n")
   }
-  #db = df %>% gather(var, y, starts_with("dX0")) %>%
-  #  group_by(var) %>%
-  #  mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
-  #  summarize(y = y %*% grad,
-  #            yh = yh %*% grad) %>% pull(yh)
-  
-  #b = b + 0.01 * db / sqrt(sum(db^2))
 }
-
 
 df %>% select()
 
