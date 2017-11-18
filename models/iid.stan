@@ -1,13 +1,20 @@
 data {
   int N;
-  vector[N] y;
+  int M;
+  vector[N] X0;
+  vector[M] Q;
+  int useQ;
   real sigma;
 }
 
 parameters {
-  vector[N] yhat;
+  vector[N] X0_;
+  vector[M] Q_;
 }
 
 model {
-  y ~ normal(yhat, sigma);
+  Q_ ~ normal(0, 1.0);
+  X0_ ~ normal(X0, sigma);
+  if(useQ > 0)
+    Q_ ~ normal(Q, sigma);
 }

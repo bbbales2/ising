@@ -14,7 +14,8 @@ radford = function (UgradU, epsilon, L, current_q)
     # Make a full step for the momentum, except at end of trajectory
     ug = UgradU(q)
     
-    cat(ug$u, "|", q, "\n")
+    cK = sum(p^2) / 2
+    cat(ug$u + cK, "|", ug$u, ",", cK, "|", q, "\n")
     
     #print(paste(q, p, ug$u, ugc$u, sum(p^2) / 2, sum(current_p^2) / 2))
     if (i!=L) {
