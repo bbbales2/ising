@@ -6,6 +6,8 @@ library(parallel)
 require(Rcpp)
 library(GGally)
 
+sourceCpp("covariance2.cpp")
+
 p = function(x) {
   as.tibble(melt(x)) %>%
     ggplot(aes(x = Var1, y = Var2, fill = factor(value))) +  
@@ -19,18 +21,21 @@ p = function(x) {
 N = factorial(5)
 sigma = 0.01
 S = 100
-beta = rnorm(5, 0.0, 1.0)
+mus = seq(-5.0, 5.0, length = 21)
+beta = rnorm(5, 0.0, 0.1)
 
 source("ising_helpers2.R")
 
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 
-(ising_gibbs(x, 0.95, c(-1.0, 1.0, 1.0, 1.0, 1.0), S, 1) -> out)$x %>% p
+(ising_gibbs(x, 5.0, c(1.0, 1.0, 1.0, 1.0, 1.0), S, 1) -> out)$x %>% p
+
+(y = ising_gibbs_derivs(x, 5.0, c(0.0, 0.0, 0.0, 0.0, 0.0), S, 1))
 
 # This is the output for the grid of test parameters
-ising_sweep = function(x, beta, S) {
-  list(mu = seq(-5.0, 5.0, length = 21),
-       seed = 1:4) %>%
+ising_sweep = function(x, beta, S, seeds) {
+  list(mu = mus,
+       seed = seeds) %>%
     expand.grid %>%
     as.tibble %>%
     (function(df) split(df, 1:nrow(df))) %>%
@@ -38,40 +43,95 @@ ising_sweep = function(x, beta, S) {
       ising_gibbs_derivs(x, row$mu, beta, S, row$seed) %>%
         mutate(mu = row$mu, seed = row$seed, S = S) %>%
         mutate(!!!beta)
-      }, mc.cores = 24) %>%
+    }, mc.cores = 24) %>%
     bind_rows %>%
     mutate(seed = factor(seed))
 }
 
-samples = list()
+names(beta) = c("b0", "b1", "b2", "b3", "b4")
+sweep = ising_sweep(x, beta, S, 1:10)
 
-for(i in 1:1000) {
-  beta = rnorm(5, 0.0, 1.0)
-  names(beta) = c("b0", "b1", "b2", "b3", "b4")
-  samples[[i]] = ising_sweep(x, beta, S) %>% mutate(sample = i)
-  print(i)
+K = rbf_cov_vec(mus %>% as.matrix, mus %>% as.matrix, c(1.0))
+
+sweep[, 1:8] %>% filter(seed != 1) %>%
+  gather(var, y, 1:6) %>%
+  group_by(var, seed) %>%
+  mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+  ggplot(aes(mu, y)) +
+  geom_point(aes(color = seed)) +
+  geom_line(aes(y = yh, color = seed)) +
+  facet_wrap(~ var, scales = "free_y")
+
+beta2 = rnorm(5, 0.1, 0.25)
+names(beta2) = c("b0", "b1", "b2", "b3", "b4")
+data = ising_sweep(x, beta2, S, 2) %>% select(-starts_with("dX0"))
+
+fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$X0, sigma = 0.1), iter = 1)
+
+b = rnorm(5, 0.1, 0.25)
+names(b) = c("b0", "b1", "b2", "b3", "b4")
+for(i in 1:100) {
+  df = ising_sweep(x, b, S, sample(10000000, 1))
+  
+  grad = grad_log_prob(fit_iid, df$X0)
+  db = df %>% gather(var, y, starts_with("dX0")) %>%
+    group_by(var) %>%
+    mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+    summarize(y = y %*% grad,
+              yh = yh %*% grad) %>% pull(yh)
+  
+  cat(attr(grad, "log_prob"), "|", b, "|", db, "\n")
+  
+  g = bind_rows(df %>% mutate(name = "current"),
+                data %>% mutate(name = "data")) %>%
+    ggplot(aes(mu, X0)) +
+    geom_line(aes(color = name))
+  print(g)
+  Sys.sleep(0)
+  
+  b = b + 0.01 * db / sqrt(sum(db^2))
 }
 
-df = bind_rows(samples)
+lp = log_prob(fit_iid, df$X0)
+for(i in 1:5) {
+  bn = b + rnorm(5, 0.0, 0.001)
+  df = ising_sweep(x, bn, S, sample(10000000, 1))
+  
+  lpn = log_prob(fit_iid, df$X0)
+  
+  cat(lpn, "|", lp, "|", b, "|", bn, "\n")
+  
+  if(lpn > lp | runif(1) < exp(lpn - lp)) {
+    b = bn;
+    lp = lpn;
+    cat("accept\n")
+  } else {
+    cat("reject\n")
+  }
+  #db = df %>% gather(var, y, starts_with("dX0")) %>%
+  #  group_by(var) %>%
+  #  mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+  #  summarize(y = y %*% grad,
+  #            yh = yh %*% grad) %>% pull(yh)
+  
+  #b = b + 0.01 * db / sqrt(sum(db^2))
+}
 
-beta = rnorm(5, 0.1, 0.25)
-names(beta) = c("b0", "b1", "b2", "b3", "b4")
-data = ising_sweep(x, beta, S) %>% mutate(sample = 0) %>% filter(seed == 1) %>% select(-starts_with("dX0"))
 
-fit_iid = stan('models/iid.stan', data = list(N = nrow(data), y = data$X0, sigma = 0.1), iter = 10)
+df %>% select()
 
-(df %>% group_by(sample, seed) %>%
-  summarize(nlp = -log_prob(fit_iid, X0),
-            b0 = b0[1],
-            b1 = b1[1],
-            b2 = b2[1],
-            b3 = b3[1],
-            b4 = b4[1]) -> dfn) %>%
+(sweep %>% group_by(sample, seed) %>%
+    summarize(lp = log_prob(fit_iid, X0),
+              b0 = b0[1],
+              b1 = b1[1],
+              b2 = b2[1],
+              b3 = b3[1],
+              b4 = b4[1]) -> dfn) %>%
   ungroup() %>%
   select(-sample, -seed, -nlp) %>%
   summary()
 
-  ungroup() %>%
+ungroup() %>%
   select(-sample) %>%
   filter(nlp < 1.0) %>%
   ggpairs()
