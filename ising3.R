@@ -5,6 +5,7 @@ library(rstan)
 library(parallel)
 require(Rcpp)
 library(GGally)
+require(gtools)
 
 sourceCpp("covariance2.cpp")
 
@@ -22,7 +23,6 @@ N = 2 * 3 * 5 * 2
 sigma = 0.01
 S = 100
 mus = seq(-5.0, 5.0, length = 21)
-beta = rnorm(5, 0.0, 0.1)
 
 source("ising_helpers2.R")
 
@@ -48,19 +48,7 @@ ising_sweep = function(x, beta, S, seeds) {
     mutate(seed = factor(seed))
 }
 
-names(beta) = c("b0", "b1", "b2", "b3", "b4")
-sweep = ising_sweep(x, beta, S, 1:10)
-
 K = rbf_cov_vec(mus %>% as.matrix, mus %>% as.matrix, c(1.0))
-
-sweep[, 1:8] %>% filter(seed != 1) %>%
-  gather(var, y, 1:6) %>%
-  group_by(var, seed) %>%
-  mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
-  ggplot(aes(mu, y)) +
-  geom_point(aes(color = seed)) +
-  geom_line(aes(y = yh, color = seed)) +
-  facet_wrap(~ var, scales = "free_y")
 
 beta2 = rnorm(5, 0.1, 0.25)
 names(beta2) = c("b0", "b1", "b2", "b3", "b4")
@@ -77,62 +65,41 @@ fit_iid = stan('models/iid.stan',
                            sigma = 0.1),
                iter = 1)
 
-b = rnorm(5, 0.1, 0.25)
-names(b) = c("b0", "b1", "b2", "b3", "b4")
-source('radford.R')
-
-UgradU = function(b) {
-  df = ising_sweep(x, b, S, sample(10000000, 1))
+opts = list()
+for(o in 1:50) {
+  b = rnorm(5, 0.1, 0.25)
+  names(b) = c("b0", "b1", "b2", "b3", "b4")
+  bs = list()
+  us = list()
   
-  grad = grad_log_prob(fit_iid, c(df$X0, b))
-  gradv = grad[1:length(df$X0)]
-  gradb = grad[(length(df$X0) + 1):length(grad)]
+  for(i in 1:100) {
+    u = UgradU(b)
+    bs[[i]] = b
+    us[[i]] = u$u
+    
+    cat(u$u, "|", b, "|", u$dudq, "\n")
+    
+    b = b - 0.01 * u$dudq / sqrt(sum(u$dudq^2))
+  }
   
-  list(u = -attr(grad, "log_prob"),
-       dudq = -gradb -
-         df %>% gather(var, y, starts_with("dX0")) %>%
-           group_by(var) %>%
-           mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
-           summarize(y = y %*% gradv,
-                     yh = yh %*% gradv) %>% pull(yh))
+  opts[[o]] = do.call("cbind", bs) %>%
+    t %>% as.tibble %>%
+    mutate(which_opt = o, lp = -(us %>% unlist))
 }
+
+opt_df = opts %>% bind_rows
+
+pmap(combn(names(b), 2) %>% t %>% as.tibble,
+     ~ opt_df %>% select(..1, ..2, which_opt, lp) %>%
+       rename(x = !!..1, y = !!..2) %>%
+       mutate(which_x = !!..1,
+              which_y = !!..2)) %>%
+  bind_rows %>%
+  ggplot(aes(x, y)) +
+  geom_point(aes(group = which_opt, colour = lp), size = 0.01) +
+  facet_grid(which_x ~ which_y)
 
 bind_rows(list(x = mus, y = ising_sweep(x, sample(bs[50:100], 1) %>% unlist, S, sample(10000000, 1)) %>% pull(X0), which = "fit") %>% as.tibble,
           list(x = mus, y = data$X0, which = "data") %>% as.tibble) %>%
   ggplot(aes(x, y)) +
   geom_point(aes(colour = which))
-
-bs = list(b)
-b[[2]] = radford(UgradU, 1e-3, 10, b)
-b[[3]] = radford(UgradU, 1e-3, 10, b)
-b[[4]] = radford(UgradU, 1e-3, 10, b)
-
-for(i in 5:105) {
-  b = radford(UgradU, 1e-3, 50, b)
-  bs[[i]] = b
-}
-
-u = lapply(bs, UgradU)
-list(s = 1:length(u),
-     u = map(u, ~ .x$u) %>% unlist) %>% as.tibble %>%
-  ggplot(aes(s, u)) +
-  geom_point()
-
-(posterior = do.call("cbind", bs) %>%
-    t %>% as.tibble %>%
-    mutate(lp = map(u, ~ .x$u) %>% unlist) %>%
-    filter(row_number() > 50))
-
-posterior %>%
-  ggpairs(mapping = ggplot2::aes(fill = lp),
-          lower = list(continuous = wrap("points", alpha = 0.3, size=0.1)))
-
-posterior %>% filter(b0 > -1 & b0 < 1) %>% summary
-
-for(i in 1:50) {
-  u = UgradU(b)
-  
-  cat(u$u, "|", b, "|", u$dudq, "\n")
-  
-  b = b - 0.01 * u$dudq / sqrt(sum(u$dudq^2))
-}
