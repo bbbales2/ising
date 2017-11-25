@@ -58,8 +58,9 @@ double dpairs(const NumericMatrix &x, int i, int j, int oi, int oj) {
 }
 
 // [[Rcpp::export]]
-List ising_gibbs(NumericMatrix x, double mu, NumericVector beta, int S,
+List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta, int S,
                  int seed = 0) {
+  NumericMatrix x(clone(x_));
   NumericMatrix out(S, beta.size() + 1);
   colnames(out) = CharacterVector::create("X0", "Q1", "Q2", "Q3", "Q4", "Q5");
 

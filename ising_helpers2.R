@@ -6,6 +6,7 @@ ising_gibbs_derivs = function(x, mu, beta, S, seed) {
   N = nrow(x) * ncol(x)
   ising_gibbs(x, mu, beta, S, seed)$states %>%
     as.tibble %>%
+    slice((S / 2) : S) %>%
     summarize(dX0dQ1 = -cov(X0, Q1) / N,
               dX0dQ2 = -cov(X0, Q2) / N,
               dX0dQ3 = -cov(X0, Q3) / N,
