@@ -19,9 +19,9 @@ p = function(x) {
     scale_y_reverse()
 }
 
-N = 2 * 3 * 5 * 2
+N = 2 * 3 * 5
 sigma = 0.01
-S = 1000
+S = 200
 mus = seq(-5.0, 5.0, length = 21)
 
 source("ising_helpers2.R")
@@ -30,14 +30,16 @@ x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 
 (ising_gibbs(x, 0.25, beta2, S, 2) -> out)$x %>% p
 
-ising_gibbs(x, 0.75, beta2, S * 10, 2)$states %>% as.tibble %>%
+ising_gibbs(x, 0.75, beta2, S, 2)$states %>% as.tibble %>%
   mutate(rn = row_number()) %>%
   gather(var, y, -rn) %>%
   ggplot(aes(rn, y)) +
   geom_point() +
   facet_grid(. ~ var)
 
-(y = ising_gibbs_derivs(x, 5.0, c(0.0, 0.0, 0.0, 0.0, 0.0), S, 1))
+noise_df = map(1:100, ~ ising_gibbs_derivs(x, 0.0, beta2, S, .)) %>% bind_rows
+
+noise_df %>% summarize_all(sd) %>% select(starts_with("Q"))
 
 # This is the output for the grid of test parameters
 ising_sweep = function(x, beta, S, seeds) {
@@ -92,7 +94,7 @@ UgradU = function(b) {
 }
 
 opts = list()
-for(o in 1:50) {
+for(o in 1:1) {
   b = rnorm(5, 0.1, 0.25)
   names(b) = c("b0", "b1", "b2", "b3", "b4")
   bs = list()
@@ -147,7 +149,7 @@ opt_dens %>%
   geom_density(aes(colour = type, fill = type), alpha = 0.15) +
   facet_grid(. ~ which)
 
-opt_plot %>% filter(type == "opt", lp > -5) %>%
+opt_plot %>% filter(type == "opt", lp > -10) %>%
   ggplot(aes(x, y)) +
   geom_density2d(data = opt_plot %>% filter(type == "prior"), bins = 10) +
   geom_point(aes(group = which_opt, colour = lp), size = 0.5) +
@@ -162,7 +164,7 @@ opt_samples = map(1:length(opts), ~ list(x = mus,
                                          which = "opt", opt = ., lp = opts[[.]] %>% pull(lp) %>% max) %>% as.tibble) %>%
   bind_rows()
 
-opt_samples %>% filter(lp > -5) %>%
+opt_samples %>% filter(lp > -10) %>%
   group_by(x) %>% summarize(mu = mean(y),
                             sd = sd(y)) %>%
   ggplot(aes(x, mu)) +

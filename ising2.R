@@ -30,7 +30,9 @@ x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 
 (ising_gibbs(x, 0.25, beta2, S, 2) -> out)$x %>% p
 
-(y = ising_gibbs_derivs(x, 5.0, c(0.0, 0.0, 0.0, 0.0, 0.0), S, 1))
+noise_df = map(1:100, ~ ising_gibbs_derivs(x, 0.0, beta2, S, .)) %>% bind_rows
+
+noise_df %>% summarize_all(sd) %>% select(-starts_with("Q"))
 
 # This is the output for the grid of test parameters
 ising_sweep = function(x, beta, S, seeds) {
