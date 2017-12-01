@@ -13,7 +13,6 @@ parameters {
 }
 
 model {
-  Q_ ~ normal(0, 1.0);
   X0_ ~ normal(X0, sigma);
   if(useQ > 0)
     Q_ ~ normal(Q, sigma);

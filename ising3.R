@@ -28,9 +28,9 @@ source("ising_helpers2.R")
 
 x = matrix(sample(c(-1, 1), N * N, replace = TRUE), nrow = N)
 
-(ising_gibbs(x, 0.25, beta2, S, 2) -> out)$x %>% p
+(ising_gibbs(x, 0.25, beta2, S, 1) -> out)$x %>% p
 
-ising_gibbs(x, 0.75, beta2, S, 2)$states %>% as.tibble %>%
+ising_gibbs(x, 0.0, b2, S, 1)$states %>% as.tibble %>%
   mutate(rn = row_number()) %>%
   gather(var, y, -rn) %>%
   ggplot(aes(rn, y)) +
@@ -39,7 +39,13 @@ ising_gibbs(x, 0.75, beta2, S, 2)$states %>% as.tibble %>%
 
 noise_df = map(1:100, ~ ising_gibbs_derivs(x, 0.0, beta2, S, .)) %>% bind_rows
 
+res = ising_gibbs_derivs(x, 0.0, beta2, S, 1)
+
+ising_sweep(x, beta2, S, 2:2)
+
 noise_df %>% summarize_all(sd) %>% select(starts_with("Q"))
+
+names(dt) = map(names(dt), ~ paste0("dX0d", .))
 
 # This is the output for the grid of test parameters
 ising_sweep = function(x, beta, S, seeds) {
@@ -49,7 +55,12 @@ ising_sweep = function(x, beta, S, seeds) {
     as.tibble %>%
     (function(df) split(df, 1:nrow(df))) %>%
     mclapply(function(row) {
-      ising_gibbs_derivs(x, row$mu, beta, S, row$seed) %>%
+      res = ising_gibbs_derivs(x, row$mu, beta, S, row$seed)
+      
+      df = res$jac[1,]
+      names(df) = map(names(df), ~ paste0("dX0d", .))
+      
+      bind_cols(res$f %>% t %>% as.tibble, df %>% t %>% as.tibble) %>%
         mutate(mu = row$mu, seed = row$seed, S = S) %>%
         mutate(!!!beta)
     }, mc.cores = 24) %>%
@@ -62,8 +73,7 @@ K = rbf_cov_vec(mus %>% as.matrix, mus %>% as.matrix, c(1.0))
 beta2 = rnorm(5, 0.1, 0.25)
 names(beta2) = c("b0", "b1", "b2", "b3", "b4")
 data = list(X0 = ising_sweep(x, beta2, S * 10, 2) %>% pull(X0),
-            Q = ising_gibbs_derivs(x, 0.0, beta2, S * 10, 2) %>%
-              gather(name, Q, starts_with("Q")) %>% pull(Q))
+            Q = ising_gibbs_derivs(x, 0.0, beta2, S * 10, 2)$f[-1, ])
 
 fit_iid = stan('models/iid.stan',
                data = list(N = length(data$X0),
@@ -77,12 +87,12 @@ fit_iid = stan('models/iid.stan',
 UgradU = function(b) {
   r = sample(10000000, 1)
   df = ising_sweep(x, b, S, r)
-  Q = ising_gibbs_derivs(x, 0.0, b, S, r) %>%
-    gather(name, Q, starts_with("Q")) %>% pull(Q)
-  
-  grad = grad_log_prob(fit_iid, c(df$X0, Q))
+  dQ = ising_gibbs_derivs(x, 0.0, b, S, r)
+  QQ = dQ$f[2:length(dQ$f), ]
+
+  grad = grad_log_prob(fit_iid, c(df$X0, QQ))
   gradv = grad[1:length(df$X0)]
-  gradb = grad[(length(df$X0) + 1):length(grad)]
+  gradb = grad[(length(df$X0) + 1):length(grad)] %*% dQ$jac[2:length(dQ$f), ]
   
   list(u = -attr(grad, "log_prob"),
        dudq = -gradb -
@@ -94,13 +104,13 @@ UgradU = function(b) {
 }
 
 opts = list()
-for(o in 1:1) {
+for(o in 1:50) {
   b = rnorm(5, 0.1, 0.25)
   names(b) = c("b0", "b1", "b2", "b3", "b4")
   bs = list()
   us = list()
   
-  for(i in 1:100) {
+  for(i in 1:200) {
     u = UgradU(b)
     bs[[i]] = b
     us[[i]] = u$u
@@ -117,9 +127,22 @@ for(o in 1:1) {
   cat("finished optimization", o, "\n")
 }
 
+fn = function(b) { UgradU(b)$u }
+gn = function(b) { UgradU(b)$dudq }
+
+opts = list()
+for(o in 1:50) {
+  b = rnorm(5, 0.1, 0.25)
+  names(b) = c("b0", "b1", "b2", "b3", "b4")
+  out = optim(b, fn, gn, method = "L-BFGS-B", control = list(maxit = 100, trace = 1, REPORT = 1))
+  opts[[o]] = out$par %>% as.list %>% as.tibble %>%
+    mutate(lp = -out$value, which_opt = o)
+  
+  cat("finished optimization", o, "\n")
+}
+
 opt_df = opts %>% bind_rows %>%
   group_by(which_opt) %>%
-  top_n(1, lp) %>%
   mutate(type = "opt") %>%
   ungroup %>%
   bind_rows(beta2 %>% as.list %>% as.tibble %>% mutate %>%
@@ -149,7 +172,7 @@ opt_dens %>%
   geom_density(aes(colour = type, fill = type), alpha = 0.15) +
   facet_grid(. ~ which)
 
-opt_plot %>% filter(type == "opt", lp > -10) %>%
+opt_plot %>% filter(type == "opt") %>%
   ggplot(aes(x, y)) +
   geom_density2d(data = opt_plot %>% filter(type == "prior"), bins = 10) +
   geom_point(aes(group = which_opt, colour = lp), size = 0.5) +
@@ -164,7 +187,14 @@ opt_samples = map(1:length(opts), ~ list(x = mus,
                                          which = "opt", opt = ., lp = opts[[.]] %>% pull(lp) %>% max) %>% as.tibble) %>%
   bind_rows()
 
-opt_samples %>% filter(lp > -10) %>%
+opt_samples %>%
+  ggplot(aes(x, y)) +
+  geom_line(aes(group = opt), alpha = 0.25) +
+  geom_point(data = list(x = mus, y = data$X0, which = "data") %>% as.tibble, color = "red") +
+  xlab("mu") + ylab("avg. composition") +
+  ggtitle("truth are red dots,\ndistribution of data generated from fits in black/grey\nmean + 95% interval estimates")
+
+opt_samples %>%
   group_by(x) %>% summarize(mu = mean(y),
                             sd = sd(y)) %>%
   ggplot(aes(x, mu)) +
@@ -174,7 +204,21 @@ opt_samples %>% filter(lp > -10) %>%
   xlab("mu") + ylab("avg. composition") +
   ggtitle("truth are red dots,\ndistribution of data generated from fits in black/grey\nmean + 95% interval estimates")
 
-x %>% p
+b2 = opts[[1]] %>% gather(name, b, 1:5) %>% pull(b) %>% setNames(names(b))
+r = 1000
+sweep = ising_sweep(x, b2, S, r)
+df = ising_gibbs_derivs(x, 0.0, b2, S, r)
+QQ = df$f[2:length(df$f), ]
+
+grad = grad_log_prob(fit_iid, c(sweep$X0, QQ))
+gradv = grad[1:length(sweep$X0)]
+gradb = grad[(length(sweep$X0) + 1):length(grad)] %*% df$jac[2:length(df$f), ]
+
+df %>% gather(var, y, starts_with("dX0")) %>%
+  group_by(var) %>%
+  mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+  summarize(y = y %*% gradv,
+            yh = yh %*% gradv) %>% pull(yh)
 
 ising_gibbs(x, 0.0, beta2, S, sample(10000000, 1))$x %>% p
 

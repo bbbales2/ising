@@ -3,19 +3,20 @@ require(Rcpp)
 sourceCpp("ising2.cpp")
 
 ising_gibbs_derivs = function(x, mu, beta, S, seed) {
-  N = nrow(x) * ncol(x)
-  ising_gibbs(x, mu, beta, S, seed)$states %>%
-    as.tibble %>%
-    slice((S / 2) : S) %>%
-    summarize(dX0dQ1 = -cov(X0, Q1) / N,
-              dX0dQ2 = -cov(X0, Q2) / N,
-              dX0dQ3 = -cov(X0, Q3) / N,
-              dX0dQ4 = -cov(X0, Q4) / N,
-              dX0dQ5 = -cov(X0, Q5) / N,
-              X0 = mean(X0) / N,
-              Q1 = mean(Q1) / N,
-              Q2 = mean(Q2) / N,
-              Q3 = mean(Q3) / N,
-              Q4 = mean(Q4) / N,
-              Q5 = mean(Q5) / N)
+  NN = nrow(x) * ncol(x)
+  res = ising_gibbs(x, mu, beta, S, seed)$states[(S / 2) : S,]
+  
+  f = matrix(0, nrow = ncol(res), ncol = 1)
+  rownames(f) = colnames(res)
+  jac = matrix(0, nrow = ncol(res), ncol = ncol(res) - 1)
+  rownames(jac) = colnames(res)
+  colnames(jac) = names(b)
+  for(i in 1:ncol(res)) {
+    f[i, 1] = mean(res[, i]) / NN
+    for(j in 2:ncol(res)) {
+      jac[i, j - 1] = -cov(res[, i], res[, j]) / NN
+    }
+  }
+  
+  list(f = f, jac = jac)
 }
