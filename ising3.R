@@ -167,12 +167,12 @@ opt_dens = map(names(b) %>% as.list, ~ opt_df %>%
       mutate(which = !!.x)) %>%
   bind_rows
 
-opt_dens %>%
+opt_dens %>% filter(lp > -5) %>%
   ggplot(aes(x)) +
   geom_density(aes(colour = type, fill = type), alpha = 0.15) +
   facet_grid(. ~ which)
 
-opt_plot %>% filter(type == "opt") %>%
+opt_plot %>% filter(type == "opt", lp > -5) %>%
   ggplot(aes(x, y)) +
   geom_density2d(data = opt_plot %>% filter(type == "prior"), bins = 10) +
   geom_point(aes(group = which_opt, colour = lp), size = 0.5) +
