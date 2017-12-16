@@ -80,7 +80,7 @@ fit_iid = stan('models/iid.stan',
                            M = length(data$Q),
                            X0 = data$X0,
                            Q = data$Q,
-                           useQ = 1,
+                           useQ = 0,
                            sigma = 0.1),
                iter = 1)
 
@@ -89,18 +89,24 @@ UgradU = function(b) {
   df = ising_sweep(x, b, S, r)
   dQ = ising_gibbs_derivs(x, 0.0, b, S, r)
   QQ = dQ$f[2:length(dQ$f), ]
+  #QQ = dQ$f[-1, ]
+  #print(QQ)
 
   grad = grad_log_prob(fit_iid, c(df$X0, QQ))
   gradv = grad[1:length(df$X0)]
   gradb = grad[(length(df$X0) + 1):length(grad)] %*% dQ$jac[2:length(dQ$f), ]
+  gradb = gradb * 0
+  
+  #grad = grad_log_prob(fit_iid, c(rep(0, length(mus)), QQ))
+  #gradb = grad[(length(mus) + 1):length(grad)] %*% dQ$jac[2:(length(QQ) + 1), ]
   
   list(u = -attr(grad, "log_prob"),
        dudq = -gradb -
-         df %>% gather(var, y, starts_with("dX0")) %>%
-         group_by(var) %>%
-         mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
-         summarize(y = y %*% gradv,
-                   yh = yh %*% gradv) %>% pull(yh))
+          df %>% gather(var, y, starts_with("dX0")) %>%
+          group_by(var) %>%
+          mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+          summarize(y = y %*% gradv,
+                    yh = yh %*% gradv) %>% pull(yh))
 }
 
 opts = list()
@@ -131,7 +137,7 @@ fn = function(b) { UgradU(b)$u }
 gn = function(b) { UgradU(b)$dudq }
 
 opts = list()
-for(o in 1:50) {
+for(o in 1:500) {
   b = rnorm(5, 0.1, 0.25)
   names(b) = c("b0", "b1", "b2", "b3", "b4")
   out = optim(b, fn, gn, method = "L-BFGS-B", control = list(maxit = 100, trace = 1, REPORT = 1))
@@ -172,7 +178,7 @@ opt_dens %>% filter(lp > -5) %>%
   geom_density(aes(colour = type, fill = type), alpha = 0.15) +
   facet_grid(. ~ which)
 
-opt_plot %>% filter(type == "opt", lp > -5) %>%
+opt_plot %>% filter(type == "opt" & lp > -5 & y < 1.0 & y > -1.0 & x < 1.0 & x > -1.0) %>%
   ggplot(aes(x, y)) +
   geom_density2d(data = opt_plot %>% filter(type == "prior"), bins = 10) +
   geom_point(aes(group = which_opt, colour = lp), size = 0.5) +
@@ -180,12 +186,25 @@ opt_plot %>% filter(type == "opt", lp > -5) %>%
   geom_point(data = opt_plot %>% filter(type == "truth"), colour = "black", size = 2.0, shape = 4, stroke = 2) +
   facet_grid(which_x ~ which_y)
 
-opt_samples = map(1:length(opts), ~ list(x = mus,
-                                         y = ising_sweep(x, opts[[.]] %>% top_n(1) %>%
-                                                            gather(name, b, 1:5) %>% pull(b) %>%
-                                                            setNames(names(b)), S, sample(10000000, 1)) %>% pull(X0),
-                                         which = "opt", opt = ., lp = opts[[.]] %>% pull(lp) %>% max) %>% as.tibble) %>%
+opt_samples = map(1:length(opts), ~ bind_cols(list(x = mus,
+                                        which = "opt",
+                                        opt = .,
+                                        lp = opts[[.]] %>% pull(lp) %>% max) %>% as.tibble,
+                                   ising_sweep(x, opts[[.]] %>% top_n(1) %>%
+                                                 gather(name, b, 1:5) %>% pull(b) %>%
+                                                 setNames(names(b)), S, sample(10000000, 1)))) %>%
   bind_rows()
+
+opt_samples %>% filter(x == 0.0 & lp > -5.0) %>% gather(coeff, value, starts_with("Q")) %>%
+  ggplot(aes(value)) +
+  geom_histogram() +
+  geom_vline(data = data$Q %>% as.list %>% as.tibble %>% gather(coeff, value),
+             aes(xintercept = value), color = "red") +
+  facet_grid(. ~ coeff, scales = "free_x")
+
+ising_sweep(x, opts[[1]] %>% top_n(1) %>%
+              gather(name, b, 1:5) %>% pull(b) %>%
+              setNames(names(b)), S, sample(10000000, 1))
 
 opt_samples %>%
   ggplot(aes(x, y)) +
