@@ -10,7 +10,7 @@ ising_gibbs_derivs = function(x, mu, beta, S, seed) {
   rownames(f) = colnames(res)
   jac = matrix(0, nrow = ncol(res), ncol = ncol(res) - 1)
   rownames(jac) = colnames(res)
-  colnames(jac) = names(b)
+  colnames(jac) = names(beta)
   for(i in 1:ncol(res)) {
     f[i, 1] = mean(res[, i]) / NN
     for(j in 2:ncol(res)) {

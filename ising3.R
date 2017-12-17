@@ -47,6 +47,28 @@ noise_df %>% summarize_all(sd) %>% select(starts_with("Q"))
 
 names(dt) = map(names(dt), ~ paste0("dX0d", .))
 
+ising_sweep = function(x, beta, S, seeds) {
+  retval = list(mu = mus,
+                seed = seeds) %>%
+    expand.grid %>%
+    as.tibble %>%
+    (function(df) split(df, 1:nrow(df))) %>%
+    mclapply(function(row) {
+      res = ising_gibbs_derivs(x, row$mu, beta, S, row$seed)
+      
+      df = res$jac[1,]
+      names(df) = map(names(df), ~ paste0("dX0d", .))
+      
+      bind_cols(res$f %>% t %>% as.tibble, df %>% t %>% as.tibble) %>%
+        mutate(mu = row$mu, seed = row$seed, S = S) %>%
+        mutate(!!!beta)
+    }, mc.cores = 24) %>%
+    bind_rows# %>%                                                                                                                                                       
+  #mutate(seed = factor(seed))                                                                                                         
+  
+  print(retval)
+  retval
+}
 # This is the output for the grid of test parameters
 ising_sweep = function(x, beta, S, seeds) {
   list(mu = mus,
@@ -80,9 +102,40 @@ fit_iid = stan('models/iid.stan',
                            M = length(data$Q),
                            X0 = data$X0,
                            Q = data$Q,
-                           useQ = 0,
+                           useQ = 1,
                            sigma = 0.1),
                iter = 1)
+
+useCorrLoss = TRUE
+useFuncLoss = TRUE
+UgradU2 = function(b) {
+  u = 0.0
+  r = sample(10000000, 1)
+  gradv = rep(0, length(b))
+  gradb = rep(0, length(b))
+  dudq = rep(0, length(b))
+  
+  if(useFuncLoss) {
+    df = ising_sweep(x, b, S, r)
+    u = u + 0.5 * sum((df$X0 - data$X0)^2)
+    gradv = (df$X0 - data$X0)
+    dudq = dudq + df %>% gather(var, y, starts_with("dX0")) %>%
+      group_by(var) %>%
+      mutate(yh = K %*% fsolve(K + diag(0.25, length(mus)), y %>% as.matrix)) %>%
+      summarize(y = y %*% gradv,
+                yh = yh %*% gradv) %>% pull(yh)
+  }
+  
+  if(useCorrLoss) {
+    dQ = ising_gibbs_derivs(x, 0.0, b, S, r)
+    QQ = dQ$f[2:length(dQ$f), ]
+    u = u + 0.5 * sum((QQ - data$Q)^2)
+    dudq = dudq + (QQ - data$Q) %*% dQ$jac[2:length(dQ$f), ]
+  }
+  
+  list(u = u,
+       dudq = dudq)
+}
 
 UgradU = function(b) {
   r = sample(10000000, 1)
@@ -95,7 +148,6 @@ UgradU = function(b) {
   grad = grad_log_prob(fit_iid, c(df$X0, QQ))
   gradv = grad[1:length(df$X0)]
   gradb = grad[(length(df$X0) + 1):length(grad)] %*% dQ$jac[2:length(dQ$f), ]
-  gradb = gradb * 0
   
   #grad = grad_log_prob(fit_iid, c(rep(0, length(mus)), QQ))
   #gradb = grad[(length(mus) + 1):length(grad)] %*% dQ$jac[2:(length(QQ) + 1), ]
@@ -137,7 +189,7 @@ fn = function(b) { UgradU(b)$u }
 gn = function(b) { UgradU(b)$dudq }
 
 opts = list()
-for(o in 1:500) {
+for(o in 1:1) {
   b = rnorm(5, 0.1, 0.25)
   names(b) = c("b0", "b1", "b2", "b3", "b4")
   out = optim(b, fn, gn, method = "L-BFGS-B", control = list(maxit = 100, trace = 1, REPORT = 1))
@@ -146,6 +198,10 @@ for(o in 1:500) {
   
   cat("finished optimization", o, "\n")
 }
+
+odf = opts %>% bind_rows
+
+odf %>% filter(lp > -5) %>% select(-which_opt, -lp) %>% ggpairs
 
 opt_df = opts %>% bind_rows %>%
   group_by(which_opt) %>%
@@ -179,7 +235,7 @@ opt_dens %>% filter(lp > -5) %>%
   facet_grid(. ~ which)
 
 opt_plot %>% filter(type == "opt" & lp > -5 & y < 1.0 & y > -1.0 & x < 1.0 & x > -1.0) %>%
-  ggplot(aes(x, y)) +
+  ggplot(aes(y, x)) +
   geom_density2d(data = opt_plot %>% filter(type == "prior"), bins = 10) +
   geom_point(aes(group = which_opt, colour = lp), size = 0.5) +
   scale_colour_gradient(low = "blue", high = "red") +
@@ -206,10 +262,10 @@ ising_sweep(x, opts[[1]] %>% top_n(1) %>%
               gather(name, b, 1:5) %>% pull(b) %>%
               setNames(names(b)), S, sample(10000000, 1))
 
-opt_samples %>%
-  ggplot(aes(x, y)) +
+opt_samples %>% filter(lp > -5.0) %>%
+  ggplot(aes(x, X0)) +
   geom_line(aes(group = opt), alpha = 0.25) +
-  geom_point(data = list(x = mus, y = data$X0, which = "data") %>% as.tibble, color = "red") +
+  geom_point(data = list(x = mus, X0 = data$X0, which = "data") %>% as.tibble, color = "red") +
   xlab("mu") + ylab("avg. composition") +
   ggtitle("truth are red dots,\ndistribution of data generated from fits in black/grey\nmean + 95% interval estimates")
 
