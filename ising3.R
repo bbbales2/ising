@@ -41,34 +41,10 @@ noise_df = map(1:100, ~ ising_gibbs_derivs(x, 0.0, beta2, S, .)) %>% bind_rows
 
 res = ising_gibbs_derivs(x, 0.0, beta2, S, 1)
 
-ising_sweep(x, beta2, S, 2:2)
-
 noise_df %>% summarize_all(sd) %>% select(starts_with("Q"))
 
 names(dt) = map(names(dt), ~ paste0("dX0d", .))
 
-ising_sweep = function(x, beta, S, seeds) {
-  retval = list(mu = mus,
-                seed = seeds) %>%
-    expand.grid %>%
-    as.tibble %>%
-    (function(df) split(df, 1:nrow(df))) %>%
-    mclapply(function(row) {
-      res = ising_gibbs_derivs(x, row$mu, beta, S, row$seed)
-      
-      df = res$jac[1,]
-      names(df) = map(names(df), ~ paste0("dX0d", .))
-      
-      bind_cols(res$f %>% t %>% as.tibble, df %>% t %>% as.tibble) %>%
-        mutate(mu = row$mu, seed = row$seed, S = S) %>%
-        mutate(!!!beta)
-    }, mc.cores = 24) %>%
-    bind_rows# %>%                                                                                                                                                       
-  #mutate(seed = factor(seed))                                                                                                         
-  
-  print(retval)
-  retval
-}
 # This is the output for the grid of test parameters
 ising_sweep = function(x, beta, S, seeds) {
   list(mu = mus,
@@ -89,6 +65,11 @@ ising_sweep = function(x, beta, S, seeds) {
     bind_rows %>%
     mutate(seed = factor(seed))
 }
+
+beta2 = rnorm(5, 0.1, 0.25)
+ising_sweep(x, beta2, S, 2:2) %>% select(X0) %>% mutate(mus = mus) %>%
+  ggplot(aes(mus, X0)) +
+  geom_line()
 
 K = rbf_cov_vec(mus %>% as.matrix, mus %>% as.matrix, c(1.0))
 
@@ -207,7 +188,7 @@ opt_df = opts %>% bind_rows %>%
   group_by(which_opt) %>%
   mutate(type = "opt") %>%
   ungroup %>%
-  bind_rows(beta2 %>% as.list %>% as.tibble %>% mutate %>%
+  bind_rows(beta %>% as.list %>% as.tibble %>% mutate %>%
     mutate(which_opt = 0, type = "truth", lp = 0, rn = 1)) %>%
   bind_rows(rnorm(5 * 2000, 0.1, 0.25) %>% matrix(ncol = 5) %>% as.tibble %>%
     setNames(names(b)) %>% mutate(which_opt = 0, type = "prior", lp = 0, rn = 1))

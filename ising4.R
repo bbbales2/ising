@@ -73,8 +73,6 @@ K = rbf_cov_vec(mus %>% as.matrix, mus %>% as.matrix, c(1.0))
 data = list(X0 = ising_sweep(x, beta, S * 10, 2) %>% pull(X0),
             Q = ising_gibbs_derivs(x, 0.0, beta, S * 10, 2)$f[-1, ])
 
-useCorrLoss = TRUE
-useFuncLoss = TRUE
 UgradU = function(b) {
     u = 0.0
     r = sample(10000000, 1)
@@ -108,10 +106,10 @@ fn = function(b) { UgradU(b)$u }
 gn = function(b) { UgradU(b)$dudq }
 
 opts = list()
-for(o in 1:500) {
+for(o in 1:250) {
   b = rnorm(5, 0.1, 0.25)
   names(b) = c("b0", "b1", "b2", "b3", "b4")
-  out = optim(b, fn, gn, method = "L-BFGS-B", control = list(maxit = 100, trace = 1, REPORT = 1))
+  out = optim(b, fn, gn, method = "L-BFGS-B", control = list(maxit = 200, trace = 1, REPORT = 1))
   opts[[o]] = out$par %>% as.list %>% as.tibble %>%
     mutate(lp = -out$value, which_opt = o)
   
