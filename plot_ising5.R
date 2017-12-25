@@ -3,6 +3,8 @@ library(tidyverse)
 library(ggplot2)
 library(GGally)
 
+lpm = -50
+
 opt_df = opts %>% bind_rows %>%
   group_by(which_opt) %>%
   mutate(type = "opt") %>%
@@ -24,12 +26,12 @@ opt_dens = map(names(b) %>% as.list, ~ opt_df %>%
                  mutate(which = !!.x)) %>%
   bind_rows
 
-opt_dens %>% filter(lp > -5) %>%
+opt_dens %>% filter(lp > lpm) %>%
   ggplot(aes(x)) +
   geom_density(aes(colour = type, fill = type), alpha = 0.15) +
   facet_grid(. ~ which)
 
-opt_plot %>% filter(type == "opt" & lp > -5 & y < 1.0 & y > -1.0 & x < 1.0 & x > -1.0) %>%
+opt_plot %>% filter(type == "opt" & lp > lpm & y < 1.0 & y > -1.0 & x < 1.0 & x > -1.0) %>%
   ggplot(aes(y, x)) +
   geom_density2d(data = opt_plot %>% filter(type == "prior"), bins = 10) +
   geom_point(data = opt_plot %>% filter(type == "truth"), colour = "black", size = 4.0, shape = 4, stroke = 1) +
@@ -40,7 +42,7 @@ opt_plot %>% filter(type == "opt" & lp > -5 & y < 1.0 & y > -1.0 & x < 1.0 & x >
 idx = 11
 bind_cols(map(opt_samples, ~ .[[idx]]$f %>% t %>% as.tibble) %>% bind_rows,
           opts %>% bind_rows) %>%
-  filter(lp > -5.0) %>% gather(coeff, value, starts_with("Q")) %>%
+  filter(lp > lpm) %>% gather(coeff, value, starts_with("Q")) %>%
   ggplot(aes(value)) +
   geom_histogram() +
   geom_vline(data = data[[idx]]$f %>% t %>% as.tibble %>% gather(coeff, value, starts_with("Q")),
@@ -52,7 +54,7 @@ map(1:length(opt_samples), function(x) {
        X0 = map(opt_samples[[x]], ~ .$f[1]) %>% unlist) %>%
       as.tibble %>% mutate(opt = x, lp = opts[[x]]$lp)
 }) %>% bind_rows %>%
-  filter(lp > -5.0) %>%
+  filter(lp > lpm) %>%
   ggplot(aes(mus, X0)) +
   geom_line(aes(group = opt), alpha = 0.25) +
   geom_point(data = list(x = mus, X0 = map(data, ~ .$f[1]) %>% unlist(), which = "data") %>% as.tibble, color = "red") +
