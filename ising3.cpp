@@ -62,233 +62,104 @@ double dpairs(const NumericMatrix &x, int i, int j, int oi, int oj) {
 // [[Rcpp::export]]
 double triplets(const NumericMatrix &x, int w) {
   double total = 0.0;
-
+  
   if(w == 0) {
     for(int i = 0; i < x.nrow(); i++) {
       for(int j = 0; j < x.ncol(); j++) {
-        /*
-         * ##
-         * x
-         */
-        total += x(i, j) *
-          x((i + 1) % x.nrow(), j) *
-          x((i + 1) % x.nrow(), (j + 1) % x.ncol());
-        /*
-         * x #
-         *   #
-         */
-        total += x(i, j) *
-          x(i, (j + 1) % x.ncol()) *
-          x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol());
-        /*
-         * ##
-         *  x
-         */
+        // ##
+        //  x
         total += x(i, j) *
           x((i + 1) % x.nrow(), (j - 1 + x.ncol()) % x.ncol()) *
           x((i + 1) % x.nrow(), j);
-        /*
-         *   #
-         * x #
-         */
+        //   #
+        // x #
         total += x(i, j) *
           x(i, (j + 1) % x.ncol()) *
           x((i + 1) % x.nrow(), (j + 1) % x.ncol());
-        /*
-         * #
-         * x #
-         */
+        // x
+        // # #
         total += x(i, j) *
-          x(i, (j + 1) % x.ncol()) *
-          x((i + 1) % x.nrow(), j);
-        /*
-         * x #
-         * #
-         */
-        total += x(i, j) *
-          x(i, (j + 1) % x.ncol()) *
+          x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol()) *
           x((i - 1 + x.nrow()) % x.nrow(), j);
+        // # x
+        // #  
+        total += x(i, j) *
+          x(i, (j - 1 + x.ncol()) % x.ncol()) *
+          x((i - 1 + x.nrow()) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
       }
     }
-  } else if(w == 1) {
-    for(int i = 0; i < x.nrow(); i++) {
-      for(int j = 0; j < x.ncol(); j++) {
-        /*
-         * #
-         * #
-         * x
-         */
-        total += x(i, j) *
-          x((i + 1) % x.nrow(), j) *
-          x((i + 2) % x.nrow(), j);
-        /*
-         * x # #
-         */
-        total += x(i, j) *
-          x(i, (j + 1) % x.ncol()) *
-          x(i, (j + 2) % x.ncol());
-        /*
-         * #
-         * x
-         * #
-        */
-        total += x(i, j) *
-          x((i + 1) % x.nrow(), j) *
-          x((i - 1 + x.nrow()) % x.nrow(), j);
-        /*
-         * # x #
-         */
-        total += x(i, j) *
-          x(i, (j + 1) % x.ncol()) *
-          x(i, (j - 1 + x.ncol()) % x.ncol());
-      }
-    }
-  } else {
-    throw std::domain_error("w must be 0 or 1");
   }
   
   return total;
 }
 
-// There's twice as many additions here as in triplets cause that function needs to avoid
-// double counting and this one does not
 // [[Rcpp::export]]
 double dtriplets(const NumericMatrix &x, int i, int j, int w) {
   double total = 0.0;
-  
+
   if(w == 0) {
-    /*
-     * ##
-     * x
-     */
-    total += x(i, j) *
-      x((i + 1) % x.nrow(), j) *
-      x((i + 1) % x.nrow(), (j + 1) % x.ncol());
-    /*
-     * x #
-     *   #
-     */
-    total += x(i, j) *
-      x(i, (j + 1) % x.ncol()) *
-      x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol());
-    /*
-     *   x
-     * # #
-     */
-    total += x(i, j) *
-      x((i - 1 + x.nrow()) % x.nrow(), j) *
-      x((i - 1 + x.nrow()) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
-    /*
-     * #
-     * # x
-     */
-    total += x(i, j) *
-      x(i, (j - 1 + x.ncol()) % x.ncol()) *
-      x((i + 1) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
-    
-    /*
-     * ##
-     *  x
-     */
+    // # #
+    //   x
     total += x(i, j) *
       x((i + 1) % x.nrow(), (j - 1 + x.ncol()) % x.ncol()) *
       x((i + 1) % x.nrow(), j);
-    /*
-     *   #
-     * x #
-     */
+    //   #
+    // x #
     total += x(i, j) *
       x(i, (j + 1) % x.ncol()) *
       x((i + 1) % x.nrow(), (j + 1) % x.ncol());
-    /*
-     * x
-     * # #
-     */
+    // x
+    // # #
     total += x(i, j) *
       x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol()) *
       x((i - 1 + x.nrow()) % x.nrow(), j);
-    /*
-     * #  
-     * # x 
-     */
+    // # x 
+    // #  
+    total += x(i, j) *
+      x(i, (j - 1 + x.ncol()) % x.ncol()) *
+      x((i - 1 + x.nrow()) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
+    
+    // # #
+    // x
+    total += x(i, j) *
+      x((i + 1) % x.nrow(), j) *
+      x((i + 1) % x.nrow(), (j + 1) % x.ncol());
+    // x #
+    //   #
+    total += x(i, j) *
+      x(i, (j + 1) % x.ncol()) *
+      x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol());
+    //   x
+    // # #
+    total += x(i, j) *
+      x((i - 1 + x.nrow()) % x.nrow(), (j - 1 + x.ncol()) % x.ncol()) *
+      x((i - 1 + x.nrow()) % x.nrow(), j);
+    // #  
+    // # x
     total += x(i, j) *
       x(i, (j - 1 + x.ncol()) % x.ncol()) *
       x((i + 1) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
-    
-    /*
-     * #
-     * x #
-     */
-    total += x(i, j) *
-      x(i, (j + 1) % x.ncol()) *
-      x((i + 1) % x.nrow(), j);
-    /*
-     * x #
-     * #
-     */
-    total += x(i, j) *
-      x(i, (j + 1) % x.ncol()) *
-      x((i - 1 + x.nrow()) % x.nrow(), j);
-    /*
-     * # x
-     *   #
-     */
-    total += x(i, j) *
-      x(i, (j - 1 + x.ncol()) % x.ncol()) *
-      x((i - 1 + x.nrow()) % x.nrow(), j);
-    /*
-     *   #
-     * # x
-     */
-    total += x(i, j) *
-      x(i, (j - 1 + x.ncol()) % x.ncol()) *
-      x((i + 1) % x.nrow(), j);
-  } else if(w == 1) {
-    /*
-     * #
-     * #
-     * x
-     */
-    total += x(i, j) *
-      x((i + 1) % x.nrow(), j) *
-      x((i + 2) % x.nrow(), j);
-    /*
-     * x # #
-     */
-    total += x(i, j) *
-      x(i, (j + 1) % x.ncol()) *
-      x(i, (j + 2) % x.ncol());
-    /*
-     * x
-     * #
-     * #
-     */
+
+    // x #
+    // #
     total += x(i, j) *
       x((i - 1 + x.nrow()) % x.nrow(), j) *
-      x((i - 2 + x.nrow()) % x.nrow(), j);
-    /*
-     * # # x
-     */
+      x(i, (j + 1) % x.ncol());
+    // # x
+    //   #
     total += x(i, j) *
       x(i, (j - 1 + x.ncol()) % x.ncol()) *
-      x(i, (j - 2 + x.ncol()) % x.ncol());
-    
-    /*
-     * #
-     * x
-     * #
-     */
-    total += x(i, j) *
-      x((i + 1) % x.nrow(), j) *
       x((i - 1 + x.nrow()) % x.nrow(), j);
-    /*
-     * # x #
-     */
+    //   #
+    // # x
+    total += x(i, j) *
+      x(i, (j - 1 + x.ncol()) % x.ncol()) *
+      x((i + 1) % x.nrow(), j);
+    // #
+    // x #
     total += x(i, j) *
       x(i, (j + 1) % x.ncol()) *
-      x(i, (j - 1 + x.ncol()) % x.ncol());
-  } else {
-    throw std::domain_error("w must be 0 or 1");
+      x((i + 1) % x.nrow(), j);
   }
   
   return total;
