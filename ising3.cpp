@@ -170,7 +170,7 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
                  NumericVector gamma, int S, int seed = 0) {
   NumericMatrix x(clone(x_));
   NumericMatrix out(S, beta.size() + gamma.size() + 1);
-  colnames(out) = CharacterVector::create("X0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7");
+  colnames(out) = CharacterVector::create("X0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6");
   
   const int ois[] = { -1, -1, -2, -2, -2 };
   const int ojs[] = { 0, 1, 0, 1, 2 };
@@ -193,9 +193,11 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
   std::uniform_int_distribution<> dis(0, x.nrow() - 1);
   
   double X0 = solo(x);
-  NumericVector Q(beta.size());
+  NumericVector Q(beta.size() + gamma.size());
   for(int k = 0; k < beta.size(); k++)
     Q(k) = pairs(x, ois[k], ojs[k]);
+  for(int k = 0; k < gamma.size(); k++)
+    Q(beta.size() + k) = triplets(x, k);
   
   for(int s = 0; s < S; s++) {
     std::shuffle(idxs.begin(), idxs.end(), gen);
@@ -205,11 +207,16 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
       int j = js[idx];
       
       double dX0 = -2 * x(i, j);
-      NumericVector dQ(beta.size());
+      NumericVector dQ(beta.size() + gamma.size());
       for(int k = 0; k < beta.size(); k++)
         dQ(k) = -2 * dpairs(x, i, j, ois[k], ojs[k]);
-      double dE = mu * dX0 + std::inner_product(beta.begin(), beta.end(),
-                                                dQ.begin(), 0.0);
+      for(int k = 0; k < gamma.size(); k++)
+        dQ(beta.size() + k) = -2 * dtriplets(x, i, j, k);
+      double dE = mu * dX0;
+      for(int k = 0; k < beta.size(); k++)
+        dE += beta[k] * dQ(k);
+      for(int k = 0; k < gamma.size(); k++)
+        dE += gamma[k] * dQ(beta.size() + k);
       
       double r = runif(gen);
       if(r > 1.0 / (1.0 + std::exp(-dE))) {
@@ -220,11 +227,10 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
     }
     
     out(s, 0) = X0;
-    out(s, 1) = Q(0);
-    out(s, 2) = Q(1);
-    out(s, 3) = Q(2);
-    out(s, 4) = Q(3);
-    out(s, 5) = Q(4);
+    for(int k = 0; k < beta.size(); k++)
+      out(s, k + 1) = Q(k);
+    for(int k = 0; k < gamma.size(); k++)
+      out(s, beta.size() + k + 1) = Q(beta.size() + k);
   }
   
   List ret;

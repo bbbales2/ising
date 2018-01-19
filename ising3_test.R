@@ -25,13 +25,12 @@ S = 200
 mus = seq(-5.0, 5.0, length = 21)
 
 beta = c(0.0, 0.0, 0.0, 0.0, 0.0)
-gamma = c(0.0, 0.0)
+gamma = c(0.0)
 
 source("ising_helpers3.R")
+sourceCpp("ising3.cpp", showOutput = TRUE)
 
-ising_gibbs(x, 0.0, beta, gamma, S, 0)
-
-sourceCpp("ising3.cpp")
+system.time(ising_gibbs(x, 0.0, beta, gamma, S, 0))
 
 for(s in 1:100) {
   x = matrix(sample(c(-1, 1), size = N * N, replace = TRUE), nrow = N)
@@ -47,3 +46,5 @@ for(s in 1:100) {
   stopifnot(n2 - n1 == -2 * dn)
   print(c(n2 - n1, -2 * dn))
 }
+
+ising_gibbs_derivs(x, 0.0, beta, gamma, S, 0)
