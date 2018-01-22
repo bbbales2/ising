@@ -19,7 +19,7 @@ p = function(x) {
     scale_y_reverse()
 }
 
-N = 20
+N = 2 * 3 * 5
 sigma = 0.01
 S = 200
 mus = seq(-5.0, 5.0, length = 21)
@@ -48,3 +48,31 @@ for(s in 1:100) {
 }
 
 ising_gibbs_derivs(x, 0.0, beta, gamma, S, 0)
+
+ising_sweep = function(x, beta, gamma, S, seeds) {
+  list(mu = mus,
+       seed = seeds) %>%
+    expand.grid %>%
+    as.tibble %>%
+    (function(df) split(df, 1:nrow(df))) %>%
+    mclapply(function(row) {
+      res = ising_gibbs_derivs(x, row$mu, beta, gamma, S, row$seed)
+      
+      res$mu = row$mu
+      res$seed = row$seed
+      
+      res
+    }, mc.cores = 24)
+}
+
+{
+  beta = rnorm(5, 0.1, 0.25)
+  gamma = rnorm(1, 0.0, 0.25)
+  data = map(ising_sweep(x, beta, gamma, S * 10, sample(1000000, 1)), ~ .$f)
+  
+  list(mus = mus,
+       y = map(data, ~ .[[1]]) %>% unlist()) %>%
+    as.tibble %>%
+    ggplot(aes(mus, y)) +
+    geom_line()
+}
