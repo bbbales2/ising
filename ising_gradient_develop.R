@@ -86,7 +86,7 @@ getOmega = function(g) {
 #getOmega(g)
 
 opts = list()
-for(j in 1:10) {
+for(j in 11:40) {
   b = rnorm(6, 0.1, 0.25)
   eps = 0.1
   M = 500
@@ -102,5 +102,5 @@ for(j in 1:10) {
     b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
   }
   
-  opts[j] = b
+  opts[[j]] = b
 }
