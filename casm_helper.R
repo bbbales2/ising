@@ -5,7 +5,8 @@ library(stringr)
 runMC = function(path) {
   system(paste0("(cd ",
                 path,
-                "; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)"))
+                "; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)"),
+         ignore.stdout = TRUE, ignore.stderr = TRUE)
 }
 
 getResults = function(path) {
@@ -27,10 +28,10 @@ getCorrs = function(path) {
     colnames(df) = gsub('[\\(\\)]', '', colnames(df))
     colNumbers = order(as.numeric(gsub('^corr([0123456789]*)$', '\\1', colnames(df))))
     dfs[[i]] = df %>% select(noquote(colnames(df)[colNumbers])) %>%
-      mutate(t = i, mci = row_number())
+      mutate(mu = i, mci = row_number())
   }
   
-  dfs %>% bind_rows %>% select(t, everything())
+  dfs %>% bind_rows %>% select(mu, everything())
 }
 
 getECIs = function(path) {
