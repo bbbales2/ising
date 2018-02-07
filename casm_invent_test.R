@@ -11,7 +11,15 @@ library(parallel)
 
 path = "/home/bbales2/casm/invent"
 ecis = getECIs(path)
-ecis = rnorm(length(ecis), 0.1, 0.25)
+
+nonZero = c(3, 4, 5, 6, 7, 14, 15, 16, 17, 18)
+keep = 3:13
+makeECIs = function() {
+  ecis = rnorm(length(ecis), 0.1, 0.25)
+  ecis[-nonZero] = 0
+  ecis
+}
+ecis = makeECIs()
 setECIs(path, ecis)
 N = 15
 
@@ -28,11 +36,9 @@ corrs %>%
   geom_line(aes(group = corr, color = mu), alpha = 0.1)
 
 
-
 smu = function(corrs, getG = FALSE) {
   NN = N * N
   res = corrs %>% select(starts_with("corr")) %>% as.matrix
-  keep = 1:ncol(res)
   
   f = matrix(0, nrow = ncol(res), ncol = 1)
   rownames(f) = colnames(res)
@@ -47,6 +53,8 @@ smu = function(corrs, getG = FALSE) {
     #}
   }
   
+  jac[, -nonZero] = 0
+  
   # I'm not sure why I need the two transposes on Eg to get things to work, but seems like I do
   if(getG) {
     out = list(g = t(res[,keep]) / NN, Eg = t(t(f[keep, 1])), Egrad = jac[keep,])
@@ -56,6 +64,8 @@ smu = function(corrs, getG = FALSE) {
   
   out
 }
+
+corrs %>% filter(mu == 5) %>% smu
 
 runSimulation = function(g) {
   setECIs(path, g)
@@ -68,10 +78,8 @@ runSimulation = function(g) {
     do(out = smu(.)) %>% pull(out)
 }
 
-ecis = rnorm(length(ecis), 0.0, 0.05)
+ecis = makeECIs()
 data = runSimulation(ecis)
-
-corrs %>% filter(mu == 1) %>% smu
 
 list(y = map(data, ~ .$Eg[[4]]) %>% unlist()) %>% as.tibble %>%
   mutate(x = row_number()) %>%
@@ -103,7 +111,7 @@ GgradG = function(g) {
 
 opts = list()
 for(j in 1:1) {
-  b = rnorm(length(ecis), 0.0, 0.05) * 0
+  b = rnorm(length(ecis), 0.0, 0.0) * 0
   eps = 0.1
   M = 500
   scaling = -log(0.01) / M
