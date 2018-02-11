@@ -30,7 +30,7 @@ results = getResults(path) %>% select(param_chem_pota, everything())
 
 corrs %>%
   group_by(mu) %>%
-  filter(mci > 500) %>% ungroup() %>%
+  filter(mci > 1) %>% ungroup() %>%
   gather(corr, value, starts_with("corr")) %>%
   ggplot(aes(mci, value)) +
   geom_line(aes(group = corr, color = mu), alpha = 0.1)
@@ -79,7 +79,9 @@ runSimulation = function(g) {
 }
 
 ecis = makeECIs()
+Sys.time()
 data = runSimulation(ecis)
+Sys.time()
 
 list(y = map(data, ~ .$Eg[[4]]) %>% unlist()) %>% as.tibble %>%
   mutate(x = row_number()) %>%
@@ -87,6 +89,7 @@ list(y = map(data, ~ .$Eg[[4]]) %>% unlist()) %>% as.tibble %>%
   geom_line() +
   geom_point()
 
+# Plot curves to be fit (the data)
 results = getResults(path) %>% select(param_chem_pota, everything())
 results %>% select(param_chem_pota, starts_with("corr")) %>%
   gather(corr, value, starts_with("corr")) %>%
@@ -110,21 +113,52 @@ GgradG = function(g) {
 }
 
 opts = list()
-for(j in 1:1) {
+opts_full = list()
+for(j in 1:2) {
+  ts = list()
+  bs = list()
   b = rnorm(length(ecis), 0.0, 0.0) * 0
   eps = 0.1
-  M = 500
-  scaling = -log(0.01) / M
+  M = 250
+  frac = 0.6
+  scaling = -log(0.01) / (frac * M)
   for(i in 1:M) {
-    g = GgradG(b)
-    W = diag(nrow(g$Eg))
-    u = t(g$Eg) %*% solve(W, g$Eg)
-    grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
-    dt = eps * exp(-i * scaling)
-    
-    cat("j : ", j, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
-    b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
+    tryCatch ({
+      g = GgradG(b)
+      W = diag(nrow(g$Eg))
+      u = t(g$Eg) %*% solve(W, g$Eg)
+      grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
+      dt = if(i < frac * M) eps * exp(-i * scaling) else dt
+      ts[[i]] = dt
+      
+      cat("j : ", j, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
+      bs[[i]] = b
+      b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
+    }, error = function(e) {
+      cat("Error at ", j, " ", i, "\n")
+      cat(paste(e), "\n")
+    })
   }
   
+  ts = cumsum(ts)
   opts[[j]] = b
+  opts_full[[j]] = bs
 }
+
+ecis %>% setNames(names(opts[[1]]))
+# Compare results of optimization to true ecis
+do.call(rbind, opts) %>% as.tibble %>%
+  mutate(which = "optimization") %>%
+  bind_rows(ecis %>% setNames(names(opts[[1]]))) %>%
+  mutate(which = replace(which, is.na(which), "truth")) %>%
+  select(nonZero, which) %>%
+  gather(corr, eci, starts_with("corr")) %>%
+  ggplot(aes(corr, eci)) +
+  geom_point(aes(color = which), shape = 4)
+
+# Plot optimization trajectories
+do.call(rbind, opts_full[[1]]) %>% as.tibble %>%
+  select(nonZero) %>% mutate(t = cumsum(eps * exp(-(1:nrow(.)) * scaling))) %>%
+  gather(corr, eci, starts_with("corr")) %>%
+  ggplot(aes(t, eci)) +
+  geom_line(aes(group = corr, color = corr))
