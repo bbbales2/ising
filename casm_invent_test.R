@@ -67,7 +67,7 @@ smu = function(corrs, getG = FALSE) {
 
 corrs %>% filter(mu == 5) %>% smu
 
-runSimulation = function(g) {
+runSimulation = function(g, getG = FALSE) {
   setECIs(path, g)
   runMC(path)
   corrs = getCorrs(path)
@@ -75,7 +75,7 @@ runSimulation = function(g) {
   corrs %>%
     group_by(mu) %>%
     filter(mci > 500) %>%
-    do(out = smu(.)) %>% pull(out)
+    do(out = smu(., getG)) %>% pull(out)
 }
 
 ecis = makeECIs()
@@ -96,8 +96,8 @@ results %>% select(param_chem_pota, starts_with("corr")) %>%
   ggplot(aes(param_chem_pota, value)) +
   geom_line(aes(group = corr, colour = corr))
 
-GgradG = function(g) {
-  a = runSimulation(g)
+GgradG = function(g, getG = FALSE) {
+  a = runSimulation(g, getG)
 
   for(i in 1:length(a)) {
     J = length(a[[i]]$Eg)
@@ -107,21 +107,26 @@ GgradG = function(g) {
     }
   }
   
-  list(#g = do.call("rbind", map(a, ~ .$g)),
-       Eg = do.call("rbind", map(a, ~ .$Eg)),
-       Egrad = do.call("rbind", map(a, ~ .$Egrad)))
+  out = list(Eg = do.call("rbind", map(a, ~ .$Eg)),
+             Egrad = do.call("rbind", map(a, ~ .$Egrad)))
+  
+  if(getG) {
+    out$g = do.call("rbind", map(a, ~ .$g))
+  }
+  
+  out
 }
 
 opts = list()
 opts_full = list()
 for(j in 1:2) {
-  ts = list()
   bs = list()
   b = rnorm(length(ecis), 0.0, 0.0) * 0
   eps = 0.1
   M = 250
   frac = 0.6
-  scaling = -log(0.01) / (frac * M)
+  scaling = -log(0.02) / (frac * M)
+  ts = rep(0, M)
   for(i in 1:M) {
     tryCatch ({
       g = GgradG(b)
@@ -131,7 +136,7 @@ for(j in 1:2) {
       dt = if(i < frac * M) eps * exp(-i * scaling) else dt
       ts[[i]] = dt
       
-      cat("j : ", j, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
+      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
       bs[[i]] = b
       b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
     }, error = function(e) {
@@ -153,12 +158,56 @@ do.call(rbind, opts) %>% as.tibble %>%
   mutate(which = replace(which, is.na(which), "truth")) %>%
   select(nonZero, which) %>%
   gather(corr, eci, starts_with("corr")) %>%
+  mutate(corr = factor(corr, levels = corr %>% unique %>% mixedsort)) %>%
   ggplot(aes(corr, eci)) +
-  geom_point(aes(color = which), shape = 4)
+  geom_point(aes(color = which), shape = 4, size = 3)
 
 # Plot optimization trajectories
 do.call(rbind, opts_full[[1]]) %>% as.tibble %>%
-  select(nonZero) %>% mutate(t = cumsum(eps * exp(-(1:nrow(.)) * scaling))) %>%
+  select(nonZero) %>% mutate(t = c(ts[1:246], cumsum(rep(dt, 50)) + ts[246])) %>%
   gather(corr, eci, starts_with("corr")) %>%
+  mutate(corr = factor(corr, levels = unique(corr))) %>%
   ggplot(aes(t, eci)) +
   geom_line(aes(group = corr, color = corr))
+
+# Compare both optimizations
+do.call(rbind, opts) %>% as.tibble %>%
+  mutate(which = "optimization") %>%
+  bind_rows(ecis %>% setNames(names(opts[[1]]))) %>%
+  mutate(which = replace(which, is.na(which), "truth")) %>%
+  select(nonZero, which) %>%
+  gather(corr, eci, starts_with("corr")) %>%
+  bind_rows(do.call(rbind, opts2) %>% as.tibble %>%
+              mutate(which = "optimization_w_extra_ecis") %>%
+              bind_rows(ecis %>% setNames(names(opts2[[1]]))) %>%
+              mutate(which = replace(which, is.na(which), "truth")) %>%
+              select(c(3:12, 14:23), which) %>%
+              gather(corr, eci, starts_with("corr"))) %>%
+  mutate(corr = factor(corr, levels = corr %>% unique %>% mixedsort)) %>%
+  ggplot(aes(corr, eci)) +
+  geom_point(aes(color = which), shape = 4, size = 3)
+
+for(j in 1:2) {
+  bs = opts_full[[j]]
+  b = bs[[M]]
+  for(i in (M + 1):(M + 50)) {
+    tryCatch ({
+      g = GgradG(b)
+      W = diag(nrow(g$Eg))
+      u = t(g$Eg) %*% solve(W, g$Eg)
+      grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
+      dt = 0.02
+      
+      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
+      b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
+      bs[[i]] = b
+    }, error = function(e) {
+      cat("Error at ", j, " ", i, "\n")
+      cat(paste(e), "\n")
+    })
+  }
+  
+  opts[[j]] = b
+  opts_full[[j]] = bs
+}
+
