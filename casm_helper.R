@@ -3,26 +3,62 @@ library(tidyverse)
 library(stringr)
 
 runMC = function(path) {
+  a = fromJSON(paste0(path, "/monte.json"))
+  
+  iv = a$driver$initial_conditions$param_chem_pot$a
+  fv = a$driver$final_conditions$param_chem_pot$a
+  sv = a$driver$incremental_conditions$param_chem_pot$a
+  
   system(paste0("(cd ",
                 path,
-                "; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)"),
-         ignore.stdout = TRUE, ignore.stderr = TRUE)
+                "; rm -rf sim.*)"))
+  
+  vs = seq(iv, fv, sv)
+  
+  for(i in 1:length(vs)) {
+    system(paste0("(mkdir ", path, "/sim.", i, ")"))
+    a$driver$initial_conditions$param_chem_pot$a = vs[i]
+    a$driver$final_conditions$param_chem_pot$a = vs[i]
+    a$driver$incremental_conditions$param_chem_pot$a = 0.0
+    writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/sim.", i, "/monte.json"))
+  }
+  
+  out = mclapply(1:length(vs), function(i) {
+    system(paste0("(cd ",
+                  paste0(path, "/sim.", i),
+                  "; /home/bbales2/local/casm/bin/casm monte -s monte.json)"),
+           ignore.stdout = TRUE, ignore.stderr = TRUE)
+  }, mc.cores = 20)
+
+  #system(paste0("(cd ",
+  #              path,
+  #              "; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)"),
+  #       ignore.stdout = TRUE, ignore.stderr = TRUE)
 }
 
 getResults = function(path) {
-  df = fromJSON(paste0(path, "/results.json")) %>% as.tibble
-  colnames(df) = gsub('[<>\\(\\),]', '', colnames(df))
-  df
+  files = list.files(path, pattern = "sim.")
+  fileNum = as.numeric(gsub('^sim.([0123456789]*)$', '\\1', files))
+  files = files[order(fileNum)]
+  
+  dfs = list()
+  for(i in 1:length(files)) {
+    df = fromJSON(paste0(path, "/", files[i], "/results.json")) %>% as.tibble
+    colnames(df) = gsub('[<>\\(\\),]', '', colnames(df))
+    dfs[[i]] = df
+  }
+  
+  do.call("bind_rows", dfs)
 }
 
 getCorrs = function(path) {
-  files = list.files(path, pattern = "conditions.")
-  fileNum = as.numeric(gsub('^conditions.([0123456789]*)$', '\\1', files))
+  files = list.files(path, pattern = "sim.")
+  fileNum = as.numeric(gsub('^sim.([0123456789]*)$', '\\1', files))
   files = files[order(fileNum)]
 
   dfs = list()  
   for(i in 1:length(files)) {
-    df = fromJSON(paste0(path, "/", files[[i]], "/observations.json.gz")) %>% as.tibble %>%
+    df = fromJSON(paste0(path, "/", files[[i]], "/conditions.0/observations.json.gz")) %>% as.tibble %>%
       select(starts_with("corr"))
     
     colnames(df) = gsub('[\\(\\)]', '', colnames(df))
@@ -56,4 +92,21 @@ setECIs = function(path, ecis) {
 
 #setECIs("/home/bbales2/casm/cubic_3d/", rep(0, 61))
 
+setSupercell = function(path, N) {
+  a = fromJSON(paste0(path, "/monte.json"))
+  a$supercell[1, 1] = N
+  a$supercell[2, 2] = N
+  writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/monte.json"))
+}
 
+getClex = function(path, b = NULL) {
+  if(!is.null(b)) {
+    setECIs(path, b)
+  }
+  
+  system(paste0("(cd ", path,
+                "; /home/bbales2/local/casm/bin/casm query -k 'clex(formation_energy) comp' -j -o clex_query.json)"),
+         ignore.stdout = TRUE, ignore.stderr = TRUE)
+  
+  fromJSON(paste0(path, "/clex_query.json")) %>% as.tibble %>% unnest %>% rename(formation_energy = 'clex(formation_energy)')
+}

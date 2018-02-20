@@ -1,4 +1,6 @@
 source("casm_helper.R")
+runMC(path)
+
 source("ising_helpers.R")
 require(Rcpp)
 
@@ -8,6 +10,7 @@ library(ggplot2)
 library(rstan)
 library(stats)
 library(parallel)
+library(gtools)
 
 path = "/home/bbales2/casm/invent"
 ecis = getECIs(path)
@@ -21,7 +24,8 @@ makeECIs = function() {
 }
 ecis = makeECIs()
 setECIs(path, ecis)
-N = 15
+N = 30
+setSupercell(path, N)
 
 runMC(path)
 
@@ -30,10 +34,10 @@ results = getResults(path) %>% select(param_chem_pota, everything())
 
 corrs %>%
   group_by(mu) %>%
-  filter(mci > 1) %>% ungroup() %>%
-  gather(corr, value, starts_with("corr")) %>%
+  filter(mci > 800) %>% ungroup() %>%
+  gather(corr, value, corr2) %>%#starts_with("corr")
   ggplot(aes(mci, value)) +
-  geom_line(aes(group = corr, color = mu), alpha = 0.1)
+  geom_point(aes(group = corr, color = mu), alpha = 0.1)
 
 
 smu = function(corrs, getG = FALSE) {
@@ -94,7 +98,7 @@ results = getResults(path) %>% select(param_chem_pota, everything())
 results %>% select(param_chem_pota, starts_with("corr")) %>%
   gather(corr, value, starts_with("corr")) %>%
   ggplot(aes(param_chem_pota, value)) +
-  geom_line(aes(group = corr, colour = corr))
+  geom_point(aes(group = corr, colour = corr))
 
 GgradG = function(g, getG = FALSE) {
   a = runSimulation(g, getG)
@@ -119,14 +123,13 @@ GgradG = function(g, getG = FALSE) {
 
 opts = list()
 opts_full = list()
-for(j in 1:2) {
+for(j in 1:20) {
   bs = list()
-  b = rnorm(length(ecis), 0.0, 0.0) * 0
+  b = makeECIs()#rnorm(length(ecis), 0.0, 0.0) * 0
   eps = 0.1
-  M = 250
+  M = 500
   frac = 0.6
   scaling = -log(0.02) / (frac * M)
-  ts = rep(0, M)
   for(i in 1:M) {
     tryCatch ({
       g = GgradG(b)
@@ -134,9 +137,9 @@ for(j in 1:2) {
       u = t(g$Eg) %*% solve(W, g$Eg)
       grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
       dt = if(i < frac * M) eps * exp(-i * scaling) else dt
-      ts[[i]] = dt
       
-      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
+      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
+      print(rbind(b[nonZero], ecis[nonZero]))
       bs[[i]] = b
       b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
     }, error = function(e) {
@@ -145,30 +148,40 @@ for(j in 1:2) {
     })
   }
   
-  ts = cumsum(ts)
   opts[[j]] = b
   opts_full[[j]] = bs
 }
 
+ts = rep(0, M)
+for(i in 1:M) {
+  dt = if(i < frac * M) eps * exp(-i * scaling) else dt
+  ts[[i]] = dt
+}
+ts = cumsum(ts)
+
 ecis %>% setNames(names(opts[[1]]))
 # Compare results of optimization to true ecis
-do.call(rbind, opts) %>% as.tibble %>%
+do.call(rbind, opts3) %>% as.tibble %>%
   mutate(which = "optimization") %>%
   bind_rows(ecis %>% setNames(names(opts[[1]]))) %>%
   mutate(which = replace(which, is.na(which), "truth")) %>%
   select(nonZero, which) %>%
+  mutate(opt = row_number()) %>%
   gather(corr, eci, starts_with("corr")) %>%
   mutate(corr = factor(corr, levels = corr %>% unique %>% mixedsort)) %>%
   ggplot(aes(corr, eci)) +
   geom_point(aes(color = which), shape = 4, size = 3)
 
 # Plot optimization trajectories
-do.call(rbind, opts_full[[1]]) %>% as.tibble %>%
-  select(nonZero) %>% mutate(t = c(ts[1:246], cumsum(rep(dt, 50)) + ts[246])) %>%
+i = 4
+do.call(rbind, opts_full3[[i]]) %>% as.tibble %>%
+  select(nonZero) %>% mutate(t = 1:50) %>%
   gather(corr, eci, starts_with("corr")) %>%
   mutate(corr = factor(corr, levels = unique(corr))) %>%
   ggplot(aes(t, eci)) +
   geom_line(aes(group = corr, color = corr))
+rbind(opts[[i]][nonZero], ecis[nonZero])
+
 
 # Compare both optimizations
 do.call(rbind, opts) %>% as.tibble %>%
@@ -198,7 +211,8 @@ for(j in 1:2) {
       grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
       dt = 0.02
       
-      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, ", params : ", b, "\n")
+      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
+      print(rbind(b[nonZero], ecis[nonZero]))
       b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
       bs[[i]] = b
     }, error = function(e) {
@@ -211,3 +225,66 @@ for(j in 1:2) {
   opts_full[[j]] = bs
 }
 
+getW = function(b) {
+  g = GgradG(b, TRUE)$g
+  w_inv = matrix(0, nrow = nrow(g), ncol = nrow(g))
+  for(i in 1:ncol(g)) {
+    w_inv = w_inv + g[, i] %*% t(g[, i])
+  }
+  solve(w_inv) / ncol(g)
+}
+
+opts2 = list()
+opts_full2 = list()
+for(j in 1:length(opts)) {
+  W = getW(opts[[j]])
+  b = opts[[j]]
+  bs = list()
+  for(i in 1:50) {
+    tryCatch ({
+      g = GgradG(b)
+      u = t(g$Eg) %*% W %*% g$Eg
+      grad = (t(g$Eg) %*% W %*% g$Egrad)[1,]
+      dt = 0.02
+      
+      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
+      print(rbind(b[nonZero], ecis[nonZero]))
+      b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
+      bs[[i]] = b
+    }, error = function(e) {
+      cat("Error at ", j, " ", i, "\n")
+      cat(paste(e), "\n")
+    })
+  }
+  
+  opts2[[j]] = b
+  opts_full2[[j]] = bs
+}
+
+tclex = getClex(path, ecis) %>% mutate(which = "truth")
+clexes = list()
+for(j in 1:length(opts2)) {
+  clexes[[j]] = getClex(path, opts2[[j]]) %>% mutate(which = "optimization", opt = j)
+}
+
+hull = tclex %>% group_by(comp) %>% filter(row_number() == which.min(formation_energy))#top_n(-1, formation_energy)
+
+do.call("bind_rows", clexes) %>%
+  filter(configname %in% (hull %>% pull(configname))) %>%
+  bind_rows(hull) %>%
+  ggplot(aes(comp, formation_energy)) +
+  geom_point(aes(color = which), shape = 4)
+
+do.call("bind_rows", clexes) %>%
+  group_by(comp, opt) %>%
+  mutate(is_minimum = (row_number() == which.min(formation_energy))) %>%
+  ungroup() %>%
+  filter(configname %in% (hull %>% pull(configname))) %>%
+  group_by(comp) %>%
+  mutate(n = n()) %>%
+  mutate(num_mins = sum(is_minimum)) %>%
+  mutate(num_not_mins = n()) %>%
+  ungroup() %>%
+  gather(which_count, num, num_mins, num_not_mins) %>%
+  ggplot(aes(comp, num)) +
+  geom_bar(aes(fill = which_count), stat = "identity")
