@@ -1,6 +1,4 @@
 source("casm_helper.R")
-runMC(path)
-
 source("ising_helpers.R")
 require(Rcpp)
 
@@ -22,9 +20,10 @@ makeECIs = function() {
   ecis[-nonZero] = 0
   ecis
 }
+ecis[nonZero] = c(0.44, 0.28, 0.1, -0.1, -0.133, 0.01, -0.18, 0.17, 0.08, -0.08)
 ecis = makeECIs()
 setECIs(path, ecis)
-N = 30
+N = 45
 setSupercell(path, N)
 
 runMC(path)
@@ -96,9 +95,11 @@ list(y = map(data, ~ .$Eg[[4]]) %>% unlist()) %>% as.tibble %>%
 # Plot curves to be fit (the data)
 results = getResults(path) %>% select(param_chem_pota, everything())
 results %>% select(param_chem_pota, starts_with("corr")) %>%
-  gather(corr, value, starts_with("corr")) %>%
-  ggplot(aes(param_chem_pota, value)) +
-  geom_point(aes(group = corr, colour = corr))
+  select(1, mixedsort(names(.))[3:20]) %>%
+  gather(corr, avg_value, starts_with("corr")) %>%
+  ggplot(aes(param_chem_pota, avg_value)) +
+  geom_line(aes(group = corr, colour = corr)) +
+  theme_grey(base_size = 18)
 
 GgradG = function(g, getG = FALSE) {
   a = runSimulation(g, getG)
@@ -127,9 +128,9 @@ for(j in 1:20) {
   bs = list()
   b = makeECIs()#rnorm(length(ecis), 0.0, 0.0) * 0
   eps = 0.1
-  M = 500
-  frac = 0.6
-  scaling = -log(0.02) / (frac * M)
+  M = 120
+  frac = 1.0
+  scaling = -log(0.04) / (frac * M)
   for(i in 1:M) {
     tryCatch ({
       g = GgradG(b)
@@ -152,6 +153,7 @@ for(j in 1:20) {
   opts_full[[j]] = bs
 }
 
+# Make time
 ts = rep(0, M)
 for(i in 1:M) {
   dt = if(i < frac * M) eps * exp(-i * scaling) else dt
@@ -161,7 +163,7 @@ ts = cumsum(ts)
 
 ecis %>% setNames(names(opts[[1]]))
 # Compare results of optimization to true ecis
-do.call(rbind, opts3) %>% as.tibble %>%
+do.call(rbind, opts2) %>% as.tibble %>%
   mutate(which = "optimization") %>%
   bind_rows(ecis %>% setNames(names(opts[[1]]))) %>%
   mutate(which = replace(which, is.na(which), "truth")) %>%
@@ -170,11 +172,11 @@ do.call(rbind, opts3) %>% as.tibble %>%
   gather(corr, eci, starts_with("corr")) %>%
   mutate(corr = factor(corr, levels = corr %>% unique %>% mixedsort)) %>%
   ggplot(aes(corr, eci)) +
-  geom_point(aes(color = which), shape = 4, size = 3)
+  geom_point(aes(color = which), shape = 4, size = 3, stroke = 1)
 
 # Plot optimization trajectories
-i = 4
-do.call(rbind, opts_full3[[i]]) %>% as.tibble %>%
+i = 7
+do.call(rbind, opts_full2[[i]]) %>% as.tibble %>%
   select(nonZero) %>% mutate(t = 1:50) %>%
   gather(corr, eci, starts_with("corr")) %>%
   mutate(corr = factor(corr, levels = unique(corr))) %>%
@@ -182,9 +184,8 @@ do.call(rbind, opts_full3[[i]]) %>% as.tibble %>%
   geom_line(aes(group = corr, color = corr))
 rbind(opts[[i]][nonZero], ecis[nonZero])
 
-
 # Compare both optimizations
-do.call(rbind, opts) %>% as.tibble %>%
+do.call(rbind, opts2) %>% as.tibble %>%
   mutate(which = "optimization") %>%
   bind_rows(ecis %>% setNames(names(opts[[1]]))) %>%
   mutate(which = replace(which, is.na(which), "truth")) %>%
@@ -200,31 +201,7 @@ do.call(rbind, opts) %>% as.tibble %>%
   ggplot(aes(corr, eci)) +
   geom_point(aes(color = which), shape = 4, size = 3)
 
-for(j in 1:2) {
-  bs = opts_full[[j]]
-  b = bs[[M]]
-  for(i in (M + 1):(M + 50)) {
-    tryCatch ({
-      g = GgradG(b)
-      W = diag(nrow(g$Eg))
-      u = t(g$Eg) %*% solve(W, g$Eg)
-      grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
-      dt = 0.02
-      
-      cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
-      print(rbind(b[nonZero], ecis[nonZero]))
-      b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
-      bs[[i]] = b
-    }, error = function(e) {
-      cat("Error at ", j, " ", i, "\n")
-      cat(paste(e), "\n")
-    })
-  }
-  
-  opts[[j]] = b
-  opts_full[[j]] = bs
-}
-
+# Fine tune the optimizations
 getW = function(b) {
   g = GgradG(b, TRUE)$g
   w_inv = matrix(0, nrow = nrow(g), ncol = nrow(g))
@@ -261,6 +238,7 @@ for(j in 1:length(opts)) {
   opts_full2[[j]] = bs
 }
 
+# Make convex hull plots
 tclex = getClex(path, ecis) %>% mutate(which = "truth")
 clexes = list()
 for(j in 1:length(opts2)) {
@@ -288,3 +266,5 @@ do.call("bind_rows", clexes) %>%
   gather(which_count, num, num_mins, num_not_mins) %>%
   ggplot(aes(comp, num)) +
   geom_bar(aes(fill = which_count), stat = "identity")
+
+# Make the cooling run plots
