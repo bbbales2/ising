@@ -99,6 +99,11 @@ setSupercell = function(path, N) {
   writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/monte.json"))
 }
 
+getSupercell = function(path) {
+  a = fromJSON(paste0(path, "/monte.json"))
+  a$supercell[1, 1]
+}
+
 getClex = function(path, b = NULL) {
   if(!is.null(b)) {
     setECIs(path, b)
@@ -109,4 +114,33 @@ getClex = function(path, b = NULL) {
          ignore.stdout = TRUE, ignore.stderr = TRUE)
   
   fromJSON(paste0(path, "/clex_query.json")) %>% as.tibble %>% unnest %>% rename(formation_energy = 'clex(formation_energy)')
+}
+
+setTemperatureFraction = function(path, frac) {
+  a = fromJSON(paste0(path, "/monte.json"))
+  a$driver$initial_conditions$temperature = 11604.97 * frac
+  a$driver$final_conditions$temperature = 11604.97 * frac
+  a$driver$incremental_conditions$temperature = 0.0
+  writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/monte.json"))
+}
+
+coolingRun = function(path, b, fracs, debug = FALSE) {
+  setECIs(path, b)
+  
+  out = map(fracs, function(frac) {
+    if(debug) {
+      cat("Running simulations for frac: ", frac, "\n");
+    }
+    
+    setTemperatureFraction(path, frac)
+    runMC(path)
+
+    getResults(path) %>%
+      select(corr1, param_chem_pota) %>%
+      mutate(Tfrac = frac)
+  }) %>% bind_rows
+  
+  setTemperatureFraction(path, 1.0)
+  
+  out
 }
