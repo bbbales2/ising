@@ -124,6 +124,11 @@ setTemperatureFraction = function(path, frac) {
   writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/monte.json"))
 }
 
+getTemperatureFraction = function(path, frac) {
+  a = fromJSON(paste0(path, "/monte.json"))
+  a$driver$initial_conditions$temperature / 11604.97
+}
+
 coolingRun = function(path, b, fracs, debug = FALSE) {
   setECIs(path, b)
   

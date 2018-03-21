@@ -44,7 +44,7 @@ corrs %>%
 
 fd(function(x) {  }, ecis[nonZero[1]], 0.1)
 
-smu = function(corrs, getG = FALSE) {
+smu = function(corrs, Tfrac, getG = FALSE) {
   NN = N * N
   res = corrs %>% select(starts_with("corr")) %>% as.matrix
   
@@ -53,12 +53,9 @@ smu = function(corrs, getG = FALSE) {
   jac = matrix(0, nrow = ncol(res), ncol = ncol(res))
   rownames(jac) = colnames(res)
   colnames(jac) = colnames(res)
-  jac = -cov(res, res) * NN
+  jac = -cov(res, res) * NN / Tfrac
   for(i in 1:ncol(res)) {
     f[i, 1] = mean(res[, i])
-    #for(j in 1:ncol(res)) {
-    #  jac[i, j] = -cov(res[, i], res[, j]) * NN
-    #}
   }
   
   jac[, -nonZero] = 0
@@ -78,18 +75,36 @@ runSimulation = function(g, getG = FALSE) {
   runMC(path)
   corrs = getCorrs(path)
   
+  Tfrac = getTemperatureFraction(path)
+  
   corrs %>%
     group_by(mu) %>%
     filter(mci > 500) %>%
-    do(out = smu(., getG)) %>% pull(out)
+    do(out = smu(., Tfrac, getG)) %>% pull(out)
 }
+
+# lwrap = function(b, i) {
+#   ecis2 = ecis3
+#   ecis2[nonZero[i]] = b
+#   setTemperatureFraction(path, 0.5)
+#   runSimulation(ecis2)[[10]]
+# }
+# 
+# dx = 1e-2
+# l1 = lwrap(ecis3[nonZero[1]] + dx, 1)
+# l2 = lwrap(ecis3[nonZero[1]], 1)
+# l3 = lwrap(ecis3[nonZero[1]] - dx, 1)
+# paste(sum(l1$Eg - l2$Eg) / dx, sum(l1$Egrad[,nonZero[1]]), sum(l2$Egrad[,nonZero[1]]))
+# paste(sum(l2$Eg - l3$Eg) / dx, sum(l2$Egrad[,nonZero[1]]), sum(l3$Egrad[,nonZero[1]]))
 
 corrs %>% filter(mu == 5) %>% smu
 
 ecis = makeECIs()
 Sys.time()
+setTemperatureFraction(path, 1.0)
+data1 = runSimulation(ecis)
 setTemperatureFraction(path, 0.5)
-data = runSimulation(ecis)
+data2 = runSimulation(ecis)
 Sys.time()
 
 # Plot curves to be fit (the data)
@@ -101,9 +116,9 @@ getResults(path) %>% select(param_chem_pota, everything()) %>%
   geom_line(aes(group = corr, colour = corr)) +
   theme_grey(base_size = 18)
 
-GgradG = function(g, getG = FALSE) {
+GgradG2 = function(g, data, getG = FALSE) {
   a = runSimulation(g, getG)
-
+  
   for(i in 1:length(a)) {
     J = length(a[[i]]$Eg)
     for(j in 1:J) {
@@ -122,7 +137,22 @@ GgradG = function(g, getG = FALSE) {
   out
 }
 
-setTemperatureFraction(path, 0.5)
+GgradG = function(g, getG = FALSE) {
+  setTemperatureFraction(path, 1.0)
+  a1 = GgradG2(g, data1, getG)
+  setTemperatureFraction(path, 0.5)
+  a2 = GgradG2(g, data2, getG)
+  
+  out = list(Eg = rbind(a1$Eg, a2$Eg),
+             Egrad = rbind(a1$Egrad, a2$Egrad))
+  
+  if(getG) {
+    out$g = rbind(a1$g, a2$g)
+  }
+  
+  out
+}
+
 opts = list()
 opts_full = list()
 for(j in 1:20) {
@@ -164,7 +194,7 @@ ts = cumsum(ts)
 
 ecis %>% setNames(names(opts[[1]]))
 # Compare results of optimization to true ecis
-do.call(rbind, opts3) %>% as.tibble %>%
+do.call(rbind, opts2) %>% as.tibble %>%
   mutate(which = "optimization") %>%
   bind_rows(ecis %>% setNames(names(opts3[[1]]))) %>%
   mutate(which = replace(which, is.na(which), "truth")) %>%
@@ -324,3 +354,9 @@ crs %>% bind_rows %>%
   ggplot(aes(corr1, Tfrac)) +
   geom_point(aes(colour = param_chem_pota), alpha = 0.1) +
   geom_path(data = tcr, aes(group = param_chem_pota), colour = "red")
+
+crs %>% bind_rows %>%
+  mutate(chem = factor(param_chem_pota, levels = sample(unique(param_chem_pota)))) %>%
+  ggplot(aes(corr1, Tfrac)) +
+  geom_path(aes(colour = chem), alpha = 0.5) +
+  geom_path(data = tcr, aes(group = param_chem_pota), colour = "black", alpha = 0.5)
