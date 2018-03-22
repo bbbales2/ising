@@ -1,8 +1,0 @@
-path = "/home/bbales2/casm/invent"
-N = 30
-ecis = rep(0, length(getECIs(path)))
-nonZero = c(3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23)
-keep = 2:13
-use_t1 = TRUE
-use_t2 = TRUE
-ecis[nonZero] = c(0.440, 0.280, 0.100, -0.100, -0.133, 0.010, -0.180, 0.170, 0.080, -0.080)
