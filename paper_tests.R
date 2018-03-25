@@ -64,7 +64,7 @@ smu = function(corrs, Tfrac, getG = FALSE) {
 
     ## I'm not sure why I need the two transposes on Eg to get things to work, but seems like I do
     if(getG) {
-        out = list(g = t(res[,keep]) / NN, Eg = t(t(f[keep, 1])), Egrad = jac[keep,])
+        out = list(g = t(res[,keep]), Eg = t(t(f[keep, 1])), Egrad = jac[keep,])
     } else {
         out = list(Eg = t(t(f[keep, 1])), Egrad = jac[keep,])
     }
@@ -136,10 +136,10 @@ getW = function(b) {
     for(i in 1:ncol(g)) {
         w_inv = w_inv + g[, i] %*% t(g[, i])
     }
+    w_inv = w_inv + diag(nrow(g))
     solve(w_inv) / ncol(g)
 }
 
-ecis = makeECIs()
 Sys.time()
 setTemperatureFraction(path, 1.0)
 data1 = runSimulation(ecis)
@@ -177,6 +177,8 @@ for(j in 1:20) {
     opts[[j]] = b
     opts_full[[j]] = bs
 }
+
+save.image(args$output)
 
 opts2 = list()
 opts_full2 = list()
