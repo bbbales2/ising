@@ -1,6 +1,7 @@
 library(jsonlite)
 library(tidyverse)
 library(stringr)
+library(parallel)
 
 runMC = function(path) {
   a = fromJSON(paste0(path, "/monte.json"))
@@ -116,6 +117,13 @@ getClex = function(path, b = NULL) {
   fromJSON(paste0(path, "/clex_query.json")) %>% as.tibble %>% unnest %>% rename(formation_energy = 'clex(formation_energy)')
 }
 
+getChemicalPotentials = function(path) {
+  a = fromJSON(paste0(path, "/monte.json"))
+  seq(a$driver$initial_conditions$param_chem_pot$a,
+      a$driver$final_conditions$param_chem_pot$a,
+      a$driver$incremental_conditions$param_chem_pot$a)
+}
+
 setTemperatureFraction = function(path, frac) {
   a = fromJSON(paste0(path, "/monte.json"))
   a$driver$initial_conditions$temperature = 11604.97 * frac
@@ -130,7 +138,29 @@ getTemperatureFraction = function(path, frac) {
 }
 
 coolingRun = function(path, b, fracs, debug = FALSE) {
-  setECIs(path, b)
+  smu = function(corrs) {
+    res = corrs %>% select(starts_with("corr")) %>% as.matrix
+    
+    f = matrix(0, nrow = ncol(res), ncol = 1)
+    rownames(f) = colnames(res)
+    for(i in 1:ncol(res)) {
+      f[i, 1] = mean(res[, i])
+    }
+    
+    ## I'm not sure why I need the two transposes on Eg to get things to work, but seems like I do
+    list(Eg = t(t(f[keep, 1])))
+  }
+  
+  runSimulation = function(g) {
+    setECIs(path, g)
+    runMC(path)
+    corrs = getCorrs(path)
+    
+    corrs %>%
+      group_by(mu) %>%
+      filter(mci > 500) %>%
+      do(out = smu(.)) %>% pull(out)
+  }
   
   out = map(fracs, function(frac) {
     if(debug) {
@@ -138,11 +168,13 @@ coolingRun = function(path, b, fracs, debug = FALSE) {
     }
     
     setTemperatureFraction(path, frac)
-    runMC(path)
-
-    getResults(path) %>%
-      select(corr1, param_chem_pota) %>%
-      mutate(Tfrac = frac)
+    dat = runSimulation(b)
+    
+    list(corr1 = map(dat, ~ .$Eg[[1]]) %>%
+           unlist()) %>%
+      as.tibble %>%
+      mutate(param_chem_pota = getChemicalPotentials(path),
+             Tfrac = frac)
   }) %>% bind_rows
   
   setTemperatureFraction(path, 1.0)
