@@ -148,7 +148,7 @@ getW = function(b) {
 Sys.time()
 data = list()
 for(i in 1:length(ts)) {
-  setTemperatureFraction(path, ts(i))
+  setTemperatureFraction(path, ts[i])
   data[[i]] = runSimulation(ecis)
 }
 Sys.time()
@@ -227,7 +227,7 @@ hull = tclex %>%
     filter(row_number() == which.min(formation_energy))
 
 ## Make the cooling run data
-tcr = coolingRun(path, ecis, seq(0.1, 1.0, length = 1)) %>%
+tcr = coolingRun(path, ecis, seq(0.1, 1.0, length = 20)) %>%
     mutate(which = "truth")
 crs = list()
 for(j in 1:length(opts2)) {
