@@ -36,7 +36,18 @@ cat(N, "\n")
 cat(ecis, "\n")
 cat(nonZero, "\n")
 cat(keep, "\n")
-cat(use_t1, ", ", use_t2, "\n")
+if(exists("use_t1")) {
+  ts = c()
+  
+  if(use_t1) {
+    ts = c(ts, 1.0)
+  }
+  
+  if(use_t2) {
+    ts = c(ts, 0.5)
+  }
+}
+cat(ts, "\n")
 
 makeECIs = function() {
     ecis[nonZero] = rnorm(length(nonZero), 0.1, 0.25)
@@ -106,26 +117,20 @@ GgradG2 = function(g, data, getG = FALSE) {
 }
 
 GgradG = function(g, getG = FALSE) {
-    a1 = NULL
-    a2 = NULL
+    a = list()
+
+    for(i in 1:length(ts)) {
+      setTemperatureFraction(path, ts[i])
+      a[[i]] = GgradG2(g, data[[i]], getG)
+    }
     
-    if(use_t1) {
-        setTemperatureFraction(path, 1.0)
-        a1 = GgradG2(g, data1, getG)
+    out = list(Eg = do.call("rbind", map(a, ~ .$Eg)),
+                 Egrad = do.call("rbind", map(a, ~ .$Egrad)))
+      
+    if(getG) {
+      out$g = do.call("rbind", map(a, ~ .$g))
     }
 
-    if(use_t2) {
-        setTemperatureFraction(path, 0.5)
-        a2 = GgradG2(g, data2, getG)
-    }
-        
-    out = list(Eg = rbind(a1$Eg, a2$Eg),
-               Egrad = rbind(a1$Egrad, a2$Egrad))
-    
-    if(getG) {
-        out$g = rbind(a1$g, a2$g)
-    }
-    
     out
 }
 
@@ -141,10 +146,11 @@ getW = function(b) {
 }
 
 Sys.time()
-setTemperatureFraction(path, 1.0)
-data1 = runSimulation(ecis)
-setTemperatureFraction(path, 0.5)
-data2 = runSimulation(ecis)
+data = list()
+for(i in 1:length(ts)) {
+  setTemperatureFraction(path, ts(i))
+  data[[i]] = runSimulation(ecis)
+}
 Sys.time()
 
 opts = list()
@@ -221,7 +227,7 @@ hull = tclex %>%
     filter(row_number() == which.min(formation_energy))
 
 ## Make the cooling run data
-tcr = coolingRun(path, ecis, seq(0.1, 1.0, length = 50)) %>%
+tcr = coolingRun(path, ecis, seq(0.1, 1.0, length = 1)) %>%
     mutate(which = "truth")
 crs = list()
 for(j in 1:length(opts2)) {
@@ -229,5 +235,36 @@ for(j in 1:length(opts2)) {
         mutate(which = "optimization", opt = j)
     cat("Finished cr: ", j, " of ", length(opts2), "\n")
 }
+
+## Generate predictions
+runSimDataToDf = function(data) {
+  do.call(cbind, map(data, ~ .$Eg)) %>%
+    as.tibble %>%
+    setNames(getChemicalPotentials(path)) %>%
+    mutate(corr = as.factor(row_number())) %>%
+    gather(mu, value, -corr) %>%
+    mutate(mu = as.numeric(mu))
+}
+
+runAllTemps = function(ecis_) {
+  a = list()
+  for(i in 1:length(ts)) {
+    setTemperatureFraction(path, ts[i])
+    a[[i]] = runSimDataToDf(runSimulation(ecis_)) %>%
+      mutate(temp = ts[i])
+  }
+
+  do.call("bind_rows", a) %>%
+    mutate(opt = i)
+}
+
+pData = list()
+for(i in 1:length(opts2)) {
+  pData[[i]] = runAllTemps(opts2[[i]])
+  cat("Finished ", i, " out of ", length(opts2), "\n")
+}
+
+tpData = runAllTemps(ecis) %>%
+  mutate(which = "truth")
 
 save.image(args$output)

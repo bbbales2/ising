@@ -20,10 +20,12 @@ N = getSupercell(path)
 keep = 2:13
 nonZero = c(3, 4, 5, 6, 7, 14, 15, 16, 17, 18)
 ecis[nonZero] = c(0.200, 0.058, 0.139, 0.222, 0.180, -0.031, 0.182, 0.203, -0.118, 0.050)
+nonZero = c(3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23)
 
 paths = c("/home/bbales2/ising/paper_outputs/test6.dat",
           "/home/bbales2/ising/paper_outputs/test7.dat",
-          "/home/bbales2/ising/paper_outputs/test8.dat")
+          "/home/bbales2/ising/paper_outputs/test8.dat",
+          "/home/bbales2/ising/paper_outputs/test9.dat")
 
 env = new.env()
 load(paths[1], envir = env)
@@ -123,7 +125,7 @@ tpData = bind_rows(runSimDataToDf(datt1) %>%
 
 pData %>%
   bind_rows %>%
-  filter(which %in% c("test6.dat")) %>%#, "test7.dat", "test8.dat"
+  #filter(which %in% c("test6.dat")) %>%#, "test7.dat", "test8.dat"
   ggplot(aes(mu, value)) +
   geom_point(aes(colour = which), alpha = 0.25) +
   geom_line(data = tpData, alpha = 0.5) +
@@ -137,7 +139,7 @@ tpData %>%
 # Compare results of optimization to true ecis
 levels =  names(data$opts2)[nonZero]
 data$opts2 %>%
-  filter(which %in% c("test6.dat")) %>%#, "test7.dat", "test8.dat"
+  #filter(which %in% c("test6.dat")) %>%#, "test7.dat", "test8.dat"
   select(nonZero, which) %>%
   bind_rows(ecis[nonZero] %>%
               setNames(levels) %>%
@@ -147,7 +149,7 @@ data$opts2 %>%
   gather(corr, eci, starts_with("corr")) %>%
   mutate(corr = factor(corr, levels = levels)) %>%
   ggplot(aes(corr, eci)) +
-  geom_point(aes(color = which), shape = 4, size = 2, stroke = 2, position = position_dodge(width = 0.25))
+  geom_point(aes(color = which), shape = 4, size = 2, stroke = 2, position = position_dodge(width = 0.75))
 
 #runSimulation(opts2[[i]])
 # getResults(path) %>% mutate(data = FALSE) %>%
@@ -176,7 +178,7 @@ data$clexes %>%
   bind_rows(hull) %>%
   ggplot(aes(comp, formation_energy)) +
   geom_point(aes(color = reference), shape = 4, size = 2, stroke = 2, alpha = 0.5) +
-  facet_grid(which ~ .)
+  facet_wrap( ~ which)
 
 ## Make the cooling run plots
 data$crs %>%
