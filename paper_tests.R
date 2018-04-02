@@ -100,10 +100,13 @@ GgradG2 = function(g, data, getG = FALSE) {
     a = runSimulation(g, getG)
     
     for(i in 1:length(a)) {
-        J = length(a[[i]]$Eg)
-        for(j in 1:J) {
-            a[[i]]$Eg[j] = a[[i]]$Eg[j] - data[[i]]$Eg[j]
+      J = length(a[[i]]$Eg)
+      for(j in 1:J) {
+        a[[i]]$Eg[j] = a[[i]]$Eg[j] - data[[i]]$Eg[j]
+        if(getG) {
+          a[[i]]$g[j,] = a[[i]]$g[j,] - data[[i]]$Eg[j]
         }
+      }
     }
     
     out = list(Eg = do.call("rbind", map(a, ~ .$Eg)),
@@ -141,7 +144,7 @@ getW = function(b) {
     for(i in 1:ncol(g)) {
         w_inv = w_inv + g[, i] %*% t(g[, i])
     }
-    w_inv = w_inv + diag(nrow(g))
+    #w_inv = w_inv + diag(nrow(g))
     solve(w_inv) / ncol(g)
 }
 
