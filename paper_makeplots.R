@@ -19,8 +19,8 @@ ecis = rep(0, length(getECIs(path)))
 N = getSupercell(path)
 keep = 2:13
 nonZero = c(3, 4, 5, 6, 7, 14, 15, 16, 17, 18)
-nonZero = c(3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23)
 ecis[nonZero] = c(0.440, 0.280, 0.100, -0.100, -0.133, 0.010, -0.180, 0.170, 0.080, -0.080)
+nonZero = c(3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23)
 
 paths = c("/home/bbales2/ising/paper_outputs/test1.dat",
           "/home/bbales2/ising/paper_outputs/test2.dat",
