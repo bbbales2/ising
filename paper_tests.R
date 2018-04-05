@@ -14,8 +14,9 @@ library(gtools)
 
 parser = ArgumentParser()
 
-parser$add_argument("--config", default="", help = "File to be sourced that has all config stuff in it")
+parser$add_argument("--config", default="", help = "File to be sourced that has all config stuff in it (or an output file if --refine enabled)")
 parser$add_argument("--output", default="", help = "Place to store the output workspace")
+parser$add_argument("--refine", action="store_true", default=FALSE, help = "Refine results instead of computing new ones (--config should be an --output file)")
 
 args = parser$parse_args()
 
@@ -29,7 +30,11 @@ if(length(args$output) == 0) {
     quit()
 }
 
-source(args$config)
+if(args$refine) {
+  attach(args$config)
+} else {
+  source(args$config)
+}
 
 cat(path, "\n")
 cat(N, "\n")
@@ -148,46 +153,51 @@ getW = function(b) {
     solve(w_inv) / ncol(g)
 }
 
-Sys.time()
-data = list()
-for(i in 1:length(ts)) {
-  setTemperatureFraction(path, ts[i])
-  data[[i]] = runSimulation(ecis)
+if(args$refine) {
+  opts = opts2
+  opts_full = opts_full2
+} else {
+  Sys.time()
+  data = list()
+  for(i in 1:length(ts)) {
+    setTemperatureFraction(path, ts[i])
+    data[[i]] = runSimulation(ecis)
+  }
+  Sys.time()
+  
+  opts = list()
+  opts_full = list()
+  for(j in 1:20) {
+      bs = list()
+      b = makeECIs()
+      eps = 0.1
+      M = 120
+      frac = 1.0
+      scaling = -log(0.04) / (frac * M)
+      for(i in 1:M) {
+          tryCatch ({
+              g = GgradG(b)
+              W = diag(nrow(g$Eg))
+              u = t(g$Eg) %*% solve(W, g$Eg)
+              grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
+              dt = if(i < frac * M) eps * exp(-i * scaling) else dt
+              
+              cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
+              print(rbind(b[nonZero], ecis[nonZero]))
+              bs[[i]] = b
+              b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
+          }, error = function(e) {
+              cat("Error at ", j, " ", i, "\n")
+              cat(paste(e), "\n")
+          })
+      }
+      
+      opts[[j]] = b
+      opts_full[[j]] = bs
+  }
+  
+  save.image(args$output)
 }
-Sys.time()
-
-opts = list()
-opts_full = list()
-for(j in 1:20) {
-    bs = list()
-    b = makeECIs()
-    eps = 0.1
-    M = 120
-    frac = 1.0
-    scaling = -log(0.04) / (frac * M)
-    for(i in 1:M) {
-        tryCatch ({
-            g = GgradG(b)
-            W = diag(nrow(g$Eg))
-            u = t(g$Eg) %*% solve(W, g$Eg)
-            grad = (t(g$Eg) %*% solve(W, g$Egrad))[1,]
-            dt = if(i < frac * M) eps * exp(-i * scaling) else dt
-            
-            cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
-            print(rbind(b[nonZero], ecis[nonZero]))
-            bs[[i]] = b
-            b = b - dt * grad / (sqrt(sum(grad^2)) + 1e-10)
-        }, error = function(e) {
-            cat("Error at ", j, " ", i, "\n")
-            cat(paste(e), "\n")
-        })
-    }
-    
-    opts[[j]] = b
-    opts_full[[j]] = bs
-}
-
-save.image(args$output)
 
 opts2 = list()
 opts_full2 = list()
@@ -201,7 +211,7 @@ for(j in 1:length(opts)) {
             g = GgradG(b)
             u = t(g$Eg) %*% W %*% g$Eg
             grad = (t(g$Eg) %*% W %*% g$Egrad)[1,]
-            dt = 0.02
+            dt = if(!args$refine) 0.02 else 0.01
             
             cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
             print(rbind(b[nonZero], ecis[nonZero]))

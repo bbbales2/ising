@@ -4,7 +4,6 @@ data {
   int N; // Number of samples in approx. distribution
   int Q; // Number of measured moments 
   vector[P] corrDataEgrad[M, Q];
-  matrix[P, P] corrDataEgradgrad[M, Q];
   real corrDataEg[M, Q];
   real cdata[M, Q];
   row_vector[P] g0;
@@ -21,7 +20,7 @@ model {
   
   for(m in 1:M) {
     for(q in 1:Q) {
-      cdata[m, q] ~ normal(corrDataEg[m, q] + (g - g0) * corrDataEgrad[m, q] + 0.5 * (g - g0) * corrDataEgradgrad[m, q] * (g - g0)', sigma);//
+      cdata[m, q] ~ normal(corrDataEg[m, q] + (g - g0) * corrDataEgrad[m, q], sigma);
     }
   }
 }
