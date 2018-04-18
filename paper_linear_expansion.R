@@ -144,15 +144,16 @@ iterateECIs = function(ecis_old) {
              cdata = t(cdata),
              g0 = seci[nonZero])
 
-    fits[[i]] = sampling(model, data = d, cores = 4)
+    #fits[[i]] = sampling(model, data = d, cores = 4)
     opt = optimizing(model, data = d)
     cat("linear i: ", i, " out of ", length(ecis_old), "\n")
     print(rbind(opt$par, ecis[nonZero], seci[nonZero]))
     ecis_new[[i]] = opt$par[1:length(nonZero)]
   }
 
-  list(ecis = ecis_new,
-       fits = fits)
+  ecis_new
+  #list(ecis = ecis_new,
+  #     fits = fits)
 }
 
 initialECIs = map(env$opts2, ~ .[nonZero])#map(env$opts_full, ~ .[[1]])
@@ -164,12 +165,12 @@ levels = names(env$opts[[1]][nonZero])
 bind_rows(initialECIs %>%
             do.call(rbind, .) %>%
             as.tibble %>%
-            mutate(type = "abc_original_optimization"),
+            mutate(type = "original"),
           opts3 %>%
             do.call(rbind, .) %>%
             as.tibble %>%
             setNames(levels) %>%
-            mutate(type = "refinement_first"),
+            mutate(type = "surrogate"),
           ecis[nonZero] %>%
             setNames(levels) %>%
             t %>%
