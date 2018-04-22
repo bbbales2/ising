@@ -41,22 +41,11 @@ cat(N, "\n")
 cat(ecis, "\n")
 cat(nonZero, "\n")
 cat(keep, "\n")
-if(exists("use_t1")) {
-  ts = c()
-  
-  if(use_t1) {
-    ts = c(ts, 1.0)
-  }
-  
-  if(use_t2) {
-    ts = c(ts, 0.5)
-  }
-}
 cat(ts, "\n")
 
 makeECIs = function() {
-  ecis[nonZero] = rnorm(length(nonZero), 0.1, 0.25)
-  ecis[-nonZero] = 0
+  ecis[keep] = rnorm(length(keep), 0.1, 0.25)
+  ecis[-keep] = 0
   ecis
 }
 
@@ -111,7 +100,7 @@ GgradG2 = function(g, data) {
     
     for(j in 1:length(keep)) {
       k = keep[j]
-      grad[[j]] = -(data[[i]]$Ega[k] - a[[i]]$Eg[k]) / Tfrac
+      grad[[j]] = -(data[[i]]$Eg[k] - a[[i]]$Eg[k]) / Tfrac
     }
     
     out[[i]]$Eg = a[[i]]$Eg
@@ -144,6 +133,12 @@ for(i in 1:length(ts)) {
 }
 Sys.time()
 
+if(length(nonZero) > length(keep)) {
+  toPrint = nonZero
+} else {
+  toPrint = keep
+}
+
 opts = list()
 opts_full = list()
 for(j in 1:20) {
@@ -161,7 +156,7 @@ for(j in 1:20) {
       dt = if(i < frac * M) eps * exp(-i * scaling) else dt
       
       cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
-      print(rbind(b[nonZero], ecis[nonZero]))
+      print(rbind(b[toPrint], ecis[toPrint]))
       bs[[i]] = b
       b = b + dt * grad / (sqrt(sum(grad^2)) + 1e-10)
     }, error = function(e) {
@@ -173,8 +168,11 @@ for(j in 1:20) {
   opts[[j]] = b
   opts_full[[j]] = bs
 }
-  
-  save.image(args$output)
+
+opts2 = opts
+opts_full2 = opts_full
+
+save.image(args$output)
 
 ## Make convex hull data
 tclex = getClex(path, ecis) %>% mutate(which = "truth")
