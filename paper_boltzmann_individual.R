@@ -11,22 +11,23 @@ library(stats)
 library(parallel)
 library(gtools)
 library(ggplot2)
+library(rstan)
 
-path = "/home/bbales2/casm/invent"
+#there are n different pairs from which to build the triplet, so three opportunities
+path = "/home/bbales2/casm/invent3"
 N = 30
 ecis = rep(0, length(getECIs(path)))
-nonZero = c(3, 4, 5, 6, 7, 14, 15)#, 16, 17, 18)
-keep = c(3, 4, 5, 6, 7)#, 14, 15)#, 16, 17, 18)
+nonZero = c(2, 3, 4, 5, 6, 7, 14, 15)#, 16, 17, 18)
+keep = c(2, 3, 4, 5, 6, 7)#, 14, 15, 16, 17, 18)
 ts = c(1.0)
-ecis[nonZero] = c(0.440, 0.280, 0.100, -0.100, -0.133, 0.3, -0.2)#0.010, -0.180, 0.170, 0.080, -0.080)
+ecis[nonZero] = c(0.0, 0.440, 0.280, 0.100, -0.100, -0.133, 0.40, -0.1)#, 0.170, 0.080, -0.080)
+mus = seq(-4, 4, 0.5)
 
 makeECIs = function() {
   ecis[keep] = rnorm(length(keep), 0.1, 0.25)
   ecis[-keep] = 0
   ecis
 }
-
-setSupercell(path, N)
 
 smu = function(corrs, Tfrac) {
   NN = N * N
@@ -43,8 +44,15 @@ smu = function(corrs, Tfrac) {
   out
 }
 
-runSimulation = function(g) {
+runSimulation = function(path, g, mu = NULL) {
+  setSupercell(path, N)
   setECIs(path, g)
+  
+  if(!is.null(mu)) {
+    setChemicalPotentials(path, mu, mu, 0)
+  } else {
+    setChemicalPotentials(path, -4, 4, 0.5)
+  }
   runMC(path)
   corrs = getCorrs(path)
   
@@ -62,38 +70,50 @@ log_sum_exp = function(x) {
   log(sum(exp(x - offset))) + offset
 }
 
-GgradG2 = function(g, data) {
-  a = runSimulation(g)
+GgradG2 = function(path, g, data, mu = NULL) {
+  a = runSimulation(path, g, mu)
   
   Tfrac = getTemperatureFraction(path)
   
   out = list()
-  for(i in 1:length(a)) {
+  if(!is.null(mu)) {
+    idxs = which(mus == mu)
+  } else {
+    idxs = 1:length(a)
+  }
+  
+  for(i in idxs) {
     grad = rep(0, length(keep))
     
-    out[[i]] = list()
+    if(!is.null(mu)) {
+      ai = 1
+    } else {
+      ai = i
+    }
     
-    out[[i]]$lp = (-data[[i]]$Eg[keep] %*% g[keep] / Tfrac - log_sum_exp(-g[keep] %*% a[[i]]$g[keep,] / Tfrac))[1, 1]
+    out[[ai]] = list()
+    
+    out[[ai]]$lp = (-data[[i]]$Eg[keep] %*% g[keep] / Tfrac - log_sum_exp(-g[keep] %*% a[[ai]]$g[keep,] / Tfrac))[1, 1]
     
     for(j in 1:length(keep)) {
       k = keep[j]
-      grad[[j]] = -(data[[i]]$Eg[k] - a[[i]]$Eg[k]) / Tfrac
+      grad[[j]] = -(data[[i]]$Eg[k] - a[[ai]]$Eg[k]) / Tfrac
     }
     
-    out[[i]]$Eg = a[[i]]$Eg
-    out[[i]]$Egrad = rep(0, length(g))
-    out[[i]]$Egrad[keep] = grad
+    out[[ai]]$Eg = a[[ai]]$Eg
+    out[[ai]]$Egrad = rep(0, length(g))
+    out[[ai]]$Egrad[keep] = grad
   }
   
   out
 }
 
-GgradG = function(g) {
+GgradG = function(path, g, mu = NULL) {
   out = list(lp = 0, Egrad = rep(0, length(g)))
   
   for(i in 1:length(ts)) {
     setTemperatureFraction(path, ts[i])
-    a = GgradG2(g, data[[i]])
+    a = GgradG2(path, g, data[[i]], mu)
     
     out$lp = out$lp + Reduce(`+`, map(a, ~ .$lp))
     out$Egrad = out$Egrad + Reduce(`+`, map(a, ~ .$Egrad))
@@ -104,54 +124,28 @@ GgradG = function(g) {
 
 Sys.time()
 data = list()
-mus = getChemicalPotentials(path)
 for(i in 1:length(ts)) {
   setTemperatureFraction(path, ts[i])
-  data[[i]] = runSimulation(ecis)
-  for(j in 1:length(data[[i]])) {
-    if(j == 1) {
-      data[[i]][[j]]$dEgdu = (data[[i]][[j + 1]]$Eg - data[[i]][[j]]$Eg) / (mus[j + 1] - mus[j])
-    } else if(j == length(data[[i]])) {
-      data[[i]][[j]]$dEgdu = (data[[i]][[j]]$Eg - data[[i]][[j - 1]]$Eg) / (mus[j] - mus[j - 1])
-    } else {
-      data[[i]][[j]]$dEgdu = (data[[i]][[j + 1]]$Eg - data[[i]][[j - 1]]$Eg) / (mus[j + 1] - mus[j - 1])
-    }
-    data[[i]][[j]]$Ega = data[[i]][[j]]$Eg
-    data[[i]][[j]]$Ega[-keep] = 0.0
-    data[[i]][[j]]$Ega[14] = data[[i]][[j]]$Eg[2] * data[[i]][[j]]$Eg[3] - data[[i]][[j]]$dEgdu[3] / (2 * ts[i])
-    data[[i]][[j]]$Ega[15] = (data[[i]][[j]]$Eg[2] * data[[i]][[j]]$Eg[3] - data[[i]][[j]]$dEgdu[3] / (2 * ts[i])) +
-      (data[[i]][[j]]$Eg[2] * data[[i]][[j]]$Eg[4] - data[[i]][[j]]$dEgdu[4] / (2 * ts[i]))
-    #data[[i]][[j]]$Ega[16] = data[[i]][[j]]$Eg[2] * data[[i]][[j]]$Eg[4] - data[[i]][[j]]$dEgdu[4] / (2 * ts[i])
-    #data[[i]][[j]]$Ega[17] = data[[i]][[j]]$Eg[2] * data[[i]][[j]]$Eg[5] - data[[i]][[j]]$dEgdu[5] / (2 * ts[i])
-    #data[[i]][[j]]$Ega[18] = data[[i]][[j]]$Eg[2] * data[[i]][[j]]$Eg[5] - data[[i]][[j]]$dEgdu[5] / (2 * ts[i])
-  }
+  data[[i]] = runSimulation(path, ecis)
 }
 Sys.time()
 
-rbind(map(data[[1]], ~ .$Ega[14]) %>% unlist,
-      map(data[[1]], ~ .$dEgdu[3]) %>% unlist)
-
-list(runSimDataToDf2(data[[1]]) %>%
-       mutate(which = "approx"),
-     runSimDataToDf(data[[1]]) %>%
-       mutate(which = "true")) %>%
-  bind_rows %>%
-  ggplot(aes(mu, value)) +
-  geom_point(aes(colour = which)) +
-  facet_grid(. ~ corr)
-
 opts = list()
 opts_full = list()
-for(j in 1:1) {
+Sys.time()
+#for(j in 1:length(mus)) {
+res = mclapply(1:length(mus), function(j) {
+  rpath = paste0("/home/bbales2/casm/invent", 2 + j)
   bs = list()
   b = makeECIs()
   eps = 0.1
-  M = 50
-  frac = 1.0
+  M = 125
+  frac = 0.75
   scaling = -log(0.04) / (frac * M)
+  dt = eps
   for(i in 1:M) {
     tryCatch ({
-      g = GgradG(b)
+      g = GgradG(rpath, b, mus[j])
       u = g$lp
       grad = g$Egrad
       dt = if(i < frac * M) eps * exp(-i * scaling) else dt
@@ -166,9 +160,47 @@ for(j in 1:1) {
     })
   }
   
-  opts[[j]] = b
-  opts_full[[j]] = bs
-}
+  list(opts = b,
+       opts_full = bs)
+}, mc.cores = 20)
+Sys.time()
+
+opts = map(res, ~.$opts)
+opts_full = map(res, ~.$opts_full)
+
+b2 = map(opts, ~ .[[keep[2]]]) %>% unlist
+b3 = map(opts, ~ .[[keep[3]]]) %>% unlist
+
+y2 = map(data[[1]], ~ .$Eg[[2]]) %>% unlist
+
+opts %>% map(~.[keep]) %>% do.call(rbind, .) %>% as.tibble
+
+opts %>% map(~.[keep]) %>%
+  do.call(rbind, .) %>%
+  as.tibble %>%
+  mutate(mu = mus) %>%
+  gather(key, value, -mu) %>%
+  ggplot(aes(mu, value)) +
+  geom_point(aes(colour = key))
+
+map(data[[1]], ~ .$Eg[keep]) %>%
+  do.call(rbind, .) %>%
+  as.tibble %>%
+  mutate(mu = mus) %>%
+  gather(key, value, -mu) %>%
+  ggplot(aes(mu, value)) +
+  geom_point(aes(colour = key))
+
+plot(y2, b2)
+# 0.4910892 0.2009558 0.1440032 -0.09527624 -0.141923
+fit = stan("models/varying_coefficients.stan",
+           data = list(N = length(y2),
+                       b1 = y2,
+                       b2 = b2,
+                       b3 = b3),
+           iter = 2000, chains = 4, cores = 4)
+
+plot(map(data[[1]], ~ .$Eg[[nonZero[1]]]) %>% unlist)
 
 b = makeECIs()
 for(i in 1:length(nonZero)) {
@@ -187,7 +219,7 @@ for(i in 1:M) {
 }
 ts = cumsum(ts)
 
-opts_full[[1]] %>%
+opts_full[[15]] %>%
   do.call(rbind, .) %>%
   as.tibble %>%
   setNames(names(data[[1]][[1]]$Eg)) %>%
@@ -225,7 +257,7 @@ runSimDataToDf2 = function(data) {
 
 list(runSimDataToDf(a) %>%
        mutate(which = "approx"),
-     runSimDataToDf(data[[1]]) %>%
+     runSimDataToDf2(data[[1]]) %>%
        mutate(which = "true")) %>%
   bind_rows %>%
   ggplot(aes(mu, value)) +

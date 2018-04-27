@@ -23,14 +23,20 @@ runMC = function(path) {
     a$driver$incremental_conditions$param_chem_pot$a = 0.0
     writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/sim.", i, "/monte.json"))
   }
-  
-  out = mclapply(1:length(vs), function(i) {
+  work = function(i) {
     system(paste0("(cd ",
                   paste0(path, "/sim.", i),
                   "; /home/bbales2/local/casm/bin/casm monte -s monte.json)"),
            ignore.stdout = TRUE, ignore.stderr = TRUE)
-  }, mc.cores = 20)
+  }
+  
+  if(length(vs) == 1) {
+    out = list(work(1))
+  } else {
+    out = mclapply(1:length(vs), work, mc.cores = 20)
+  }
 
+  out
   #system(paste0("(cd ",
   #              path,
   #              "; rm -rf conditions.* results.json; /home/bbales2/local/casm/bin/casm monte -s monte.json)"),
@@ -124,12 +130,22 @@ getChemicalPotentials = function(path) {
       a$driver$incremental_conditions$param_chem_pot$a)
 }
 
+setChemicalPotentials = function(path, initial, final, increment) {
+  fpath = paste0(path, "/monte.json")
+  a = fromJSON(fpath)
+  a$driver$initial_conditions$param_chem_pot$a = initial
+  a$driver$final_conditions$param_chem_pot$a = final
+  a$driver$incremental_conditions$param_chem_pot$a = increment
+  writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), fpath)
+}
+
 setTemperatureFraction = function(path, frac) {
+  fpath = paste0(path, "/monte.json")
   a = fromJSON(paste0(path, "/monte.json"))
   a$driver$initial_conditions$temperature = 11604.97 * frac
   a$driver$final_conditions$temperature = 11604.97 * frac
   a$driver$incremental_conditions$temperature = 0.0
-  writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), paste0(path, "/monte.json"))
+  writeLines(toJSON(a, pretty = TRUE, auto_unbox = TRUE), fpath)
 }
 
 getTemperatureFraction = function(path, frac) {
