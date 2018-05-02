@@ -13,29 +13,14 @@ library(gtools)
 library(ggplot2)
 library(rstan)
 
-parser = ArgumentParser()
-
-parser$add_argument("--output", default="", help = "Place to store the output workspace")
-parser$add_argument("-t", type="double", default=1.0, help = "Operating temperature")
-
-args = parser$parse_args()
-
-cat(args$t, "\n")
-
-if(length(args$output) == 0) {
-  print("No output filename provided")
-  quit()
-}
-
 path = "/home/bbales2/casm/invent2"
 N = 30
 ecis = rep(0, length(getECIs(path)))
-nonZero = c(2, 3, 4, 5, 6, 7, 14, 15)
-keep = c(2, 3, 4, 5, 6, 7, 14, 15)
-ts = c(args$t)
-ecis[nonZero[1]] = 0.0
-ecis[nonZero[2]] = rnorm(1, 0.30, 0.1)
-ecis[nonZero[3:length(nonZero)]] = rnorm(length(nonZero) - 2, 0.1, 0.25)
+nonZero = c(3, 4, 5, 6, 7, 14, 16, 17)
+keep = c(3, 4, 5, 6, 7, 14, 16, 17)
+ts = c(2.0)
+ecis[nonZero[1]] = rnorm(1, 0.30, 0.1)
+ecis[nonZero[2:length(nonZero)]] = rnorm(length(nonZero) - 2, 0.1, 0.25)
 mus = seq(-4, 4, 0.5)
 
 makeECIs = function() {
@@ -85,6 +70,7 @@ log_sum_exp = function(x) {
   log(sum(exp(x - offset))) + offset
 }
 
+#lambda = 0.0005
 GgradG2 = function(path, g, data, mu = NULL) {
   a = runSimulation(path, g, mu)
   
@@ -99,6 +85,7 @@ GgradG2 = function(path, g, data, mu = NULL) {
   
   for(i in idxs) {
     grad = rep(0, length(keep))
+    grad2 = rep(0, length(keep))
     
     if(!is.null(mu)) {
       ai = 1
@@ -114,24 +101,46 @@ GgradG2 = function(path, g, data, mu = NULL) {
       k = keep[j]
       if(k == 14) {
         grad[[j]] = -3 * (data[[i]]$Eg[3] * data[[i]]$Eg[2] - a[[ai]]$Eg[3] * a[[ai]]$Eg[2]) / Tfrac
+        grad2[[j]] = (-1 / (Tfrac^2)) * var(3 * a[[ai]]$g[3,] * a[[ai]]$g[2,]) * N * N
       } else if(k == 15) {
         grad[[j]] = -(data[[i]]$Eg[4] * data[[i]]$Eg[2] - a[[ai]]$Eg[4] * a[[ai]]$Eg[2]) / Tfrac -
           2 * (data[[i]]$Eg[3] * data[[i]]$Eg[2] - a[[ai]]$Eg[3] * a[[ai]]$Eg[2]) / Tfrac
+        grad2[[j]] = (-1 / (Tfrac^2)) * var(2 * a[[ai]]$g[3,] * a[[ai]]$g[2,] + a[[ai]]$g[4,] * a[[ai]]$g[2,]) * N * N
+      } else if(k == 16) {
+        grad[[j]] = -3 * (data[[i]]$Eg[4] * data[[i]]$Eg[2] - a[[ai]]$Eg[4] * a[[ai]]$Eg[2]) / Tfrac
+        grad2[[j]] = (-1 / (Tfrac^2)) * var(3 * a[[ai]]$g[4,] * a[[ai]]$g[2,]) * N * N
+      } else if(k == 17) {
+        grad[[j]] = -(data[[i]]$Eg[3] * data[[i]]$Eg[2] - a[[ai]]$Eg[3] * a[[ai]]$Eg[2]) / Tfrac -
+          (data[[i]]$Eg[4] * data[[i]]$Eg[2] - a[[ai]]$Eg[4] * a[[ai]]$Eg[2]) / Tfrac -
+          (data[[i]]$Eg[5] * data[[i]]$Eg[2] - a[[ai]]$Eg[5] * a[[ai]]$Eg[2]) / Tfrac
+        grad2[[j]] = (-1 / (Tfrac^2)) * var(a[[ai]]$g[3,] * a[[ai]]$g[2,] +
+                                              a[[ai]]$g[4,] * a[[ai]]$g[2,] +
+                                              a[[ai]]$g[5,] * a[[ai]]$g[2,]) * N * N
+      } else if(k == 18) {
+        grad[[j]] = -3 * (data[[i]]$Eg[5] * data[[i]]$Eg[2] - a[[ai]]$Eg[5] * a[[ai]]$Eg[2]) / Tfrac
+        grad2[[j]] = (-1 / (Tfrac^2)) * var(3 * a[[ai]]$g[5,] * a[[ai]]$g[2,]) * N * N
       } else {
         grad[[j]] = -(data[[i]]$Eg[k] - a[[ai]]$Eg[k]) / Tfrac
+        grad2[[j]] = (-1 / (Tfrac^2)) * var(a[[ai]]$g[k,]) * N * N
       }
+      
+      #if(k > 10) {
+      #  grad[[j]] = grad[[j]] + ifelse(g[k] > 0.0, -lambda, lambda)
+      #}
     }
     
     out[[ai]]$Eg = a[[ai]]$Eg
     out[[ai]]$Egrad = rep(0, length(g))
+    out[[ai]]$Egrad2 = rep(0, length(g))
     out[[ai]]$Egrad[keep] = grad
+    out[[ai]]$Egrad2[keep] = grad2
   }
   
   out
 }
 
 GgradG = function(path, g, mu = NULL) {
-  out = list(lp = 0, Egrad = rep(0, length(g)))
+  out = list(lp = 0, Egrad = rep(0, length(g)), Egrad2 = rep(0, length(g)))
   
   for(i in 1:length(ts)) {
     setTemperatureFraction(path, ts[i])
@@ -139,6 +148,7 @@ GgradG = function(path, g, mu = NULL) {
     
     out$lp = out$lp + Reduce(`+`, map(a, ~ .$lp))
     out$Egrad = out$Egrad + Reduce(`+`, map(a, ~ .$Egrad))
+    out$Egrad2 = out$Egrad2 + Reduce(`+`, map(a, ~ .$Egrad2))
   }
   
   out
@@ -151,8 +161,8 @@ for(i in 1:length(ts)) {
   data[[i]] = runSimulation(path, ecis)
   for(j in 1:length(data[[i]])) {
     data[[i]][[j]]$g = NULL
-    data[[i]][[j]]$Eg[-keep[1:6]] = 0.0
-    data[[i]][[j]]$Egrad[,-keep[1:6]] = 0.0
+    data[[i]][[j]]$Eg[-c(2:7)] = 0.0
+    data[[i]][[j]]$Egrad = NULL #[,-keep[1:6]] = 0.0
   }
 }
 Sys.time()
@@ -176,7 +186,7 @@ for(j in 1:1) {
       dt = if(i < frac * M) eps * exp(-i * scaling) else dt
       
       cat("j : ", j, ", i : ", i, ", dt : ", dt, ", lp : ", u, "params: \n")
-      print(rbind(b[nonZero], ecis[nonZero]))
+      print(rbind(b[nonZero], ecis[nonZero], grad[nonZero], sqrt(-1.0 / g$Egrad2[nonZero]), (b - grad / (g$Egrad2 + 1e-10))[nonZero]))
       bs[[i]] = b
       b = b + dt * grad / (sqrt(sum(grad^2)) + 1e-10)
     }, error = function(e) {

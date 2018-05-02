@@ -17,10 +17,10 @@ library(rstan)
 path = "/home/bbales2/casm/invent3"
 N = 30
 ecis = rep(0, length(getECIs(path)))
-nonZero = c(2, 3, 4, 5, 6, 7, 14, 15)#, 16, 17, 18)
+nonZero = c(2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18)
 keep = c(2, 3, 4, 5, 6, 7)#, 14, 15, 16, 17, 18)
-ts = c(1.0)
-ecis[nonZero] = c(0.0, 0.440, 0.280, 0.100, -0.100, -0.133, 0.40, -0.1)#, 0.170, 0.080, -0.080)
+ts = c(4.0)
+ecis[nonZero] = c(0.0, 0.440, 0.280, 0.100, -0.100, -0.133, 0.40, -0.1, 0, 0, 0)# 0.170, 0.080, -0.080)
 mus = seq(-4, 4, 0.5)
 
 makeECIs = function() {
@@ -168,23 +168,38 @@ Sys.time()
 opts = map(res, ~.$opts)
 opts_full = map(res, ~.$opts_full)
 
-b2 = map(opts, ~ .[[keep[2]]]) %>% unlist
-b3 = map(opts, ~ .[[keep[3]]]) %>% unlist
+opts %>%
+  map(~ .[keep]) %>%
+  do.call(rbind, .) -> b
 
-y2 = map(data[[1]], ~ .$Eg[[2]]) %>% unlist
+data[[1]] %>%
+  map(~ .$Eg[keep]) %>%
+  do.call(rbind, .) -> phi
 
-opts %>% map(~.[keep]) %>% do.call(rbind, .) %>% as.tibble
+fit = stan("models/varying_coefficients_everything.stan",
+           data = list(N = nrow(b),
+                       M = ncol(b),
+                       phi = phi,
+                       b = b),
+           iter = 2000, chains = 4, cores = 4)
 
-opts %>% map(~.[keep]) %>%
-  do.call(rbind, .) %>%
+e1 = ecis[nonZero[-1]]
+e2 = extract(fit, pars = c('v', 'v13', 'v14', 'v15', 'v16', 'v17')) %>%
+  do.call(cbind, .) %>%
+  `[`(,-1) %>%
+  colMeans %>%
+  as.vector
+
+print(rbind(e1, e2))
+
+b %>%
   as.tibble %>%
   mutate(mu = mus) %>%
   gather(key, value, -mu) %>%
   ggplot(aes(mu, value)) +
   geom_point(aes(colour = key))
 
-map(data[[1]], ~ .$Eg[keep]) %>%
-  do.call(rbind, .) %>%
+phi %>%
   as.tibble %>%
   mutate(mu = mus) %>%
   gather(key, value, -mu) %>%
@@ -213,18 +228,22 @@ for(i in 1:length(nonZero)) {
   cat("approx grad: ", (l2$lp - l1$lp) / dx, ", grad 1: ", l1$Egrad[ind], ", grad 2: ", l2$Egrad[ind], "\n")
 }
 
-ts = rep(0, M)
+eps = 0.1
+M = 125
+frac = 0.75
+scaling = -log(0.04) / (frac * M)
+ts2 = rep(0, M)
 for(i in 1:M) {
-  ts[[i]] = if(i < frac * M) eps * exp(-i * scaling) else dt
+  ts2[[i]] = if(i < frac * M) eps * exp(-i * scaling) else dt
 }
-ts = cumsum(ts)
+ts2 = cumsum(ts2)
 
-opts_full[[15]] %>%
+opts_full[[2]] %>%
   do.call(rbind, .) %>%
   as.tibble %>%
   setNames(names(data[[1]][[1]]$Eg)) %>%
-  select(nonZero) %>%
-  mutate(t = ts) %>%
+  select(keep) %>%
+  mutate(t = ts2) %>%
   gather(corr, value, starts_with("corr")) %>%
   ggplot(aes(t, value)) +
   geom_line(aes(colour = corr, group = corr))

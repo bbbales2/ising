@@ -25,8 +25,10 @@ mus = seq(-4, 4, 0.5)
 
 paths = list()
 
-for(i in 1:26) {
-  paths[i] = paste0("/home/bbales2/ising/paper_outputs/individual4/ind", i, ".dat")
+for(i in 1:50) {
+  paths = c(paths, paste0("/home/bbales2/ising/paper_outputs/individual4/ind", i, ".dat"))
+  paths = c(paths, paste0("/home/bbales2/ising/paper_outputs/individual4.temp.0.5/ind", i, ".dat"))
+  paths = c(paths, paste0("/home/bbales2/ising/paper_outputs/individual4.temp.2.0/ind", i, ".dat"))
 }
 
 env = new.env()
@@ -37,7 +39,8 @@ proc = map(paths, function(path) {
   load(path, envir = env)
   
   out = list(ecis = env$ecis[env$nonZero[-1]],
-             ecis_est = env$b[env$nonZero[-1]])
+             ecis_est = env$b[env$nonZero[-1]],
+             t = env$ts[1])
 
   out
 })
@@ -82,7 +85,11 @@ map(data[[1]], ~ .$Eg[keep]) %>%
   geom_point(aes(colour = key))
 
 list(error = map(proc, ~ sqrt(sum((.$ecis - .$ecis_est) ^ 2))) %>% unlist,
-     triplets = map(proc, ~ sqrt(sum(.$ecis[6:7] ^ 2))) %>% unlist) %>%
+     triplets = map(proc, ~ sqrt(sum(.$ecis[6:7] ^ 2))) %>% unlist,
+     t = as.factor(map(proc, ~ .$t) %>% unlist)) %>%
   as.tibble %>%
-  ggplot(aes(error, triplets)) +
-  geom_point()
+  filter(t != 2.0 & triplets < 0.75) %>%
+  ggplot(aes(triplets, error)) +
+  geom_point(aes(colour = t)) +
+  xlab("Magnitude of triplet ECIs") +
+  scale_y_log10()
