@@ -13,7 +13,7 @@ library(gtools)
 library(ggplot2)
 library(rstan)
 
-path = "/home/bbales2/casm/invent2"
+path = "/home/bbales2/casm/invent1"
 N = 30
 ecis = rep(0, length(getECIs(path)))
 nonZero = c(3, 4, 5, 6, 7, 14, 16, 17)
@@ -153,6 +153,26 @@ GgradG = function(path, g, mu = NULL) {
   
   out
 }
+
+runMC(path)
+source("casm_helper.R")
+corrs = getCorrs(path)
+
+b = getECIs(path)
+corrs %>%
+  select(starts_with("corr")) %>%
+  `[`(1:55,) %>%
+  as.matrix %>%
+  solve(., corrs$formation_energy[1:55]) -> et
+
+b = makeECIs()
+dx = 0.01
+i = 1
+b2 = b
+b2[nonZero[i]] = b2[nonZero[i]] + dx
+l1 = GgradG(path, b)
+l2 = GgradG(path, b2)
+cat(paste((l2$lp - l1$lp) / dx, l1$Egrad[nonZero[i]], l2$Egrad[nonZero[i]]))
 
 Sys.time()
 data = list()
