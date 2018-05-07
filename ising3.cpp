@@ -198,14 +198,14 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
     Q(k) = pairs(x, ois[k], ojs[k]);
   for(int k = 0; k < gamma.size(); k++)
     Q(beta.size() + k) = triplets(x, k);
-  
+
   for(int s = 0; s < S; s++) {
     std::shuffle(idxs.begin(), idxs.end(), gen);
-    
+
     for(int idx : idxs) {
       int i = is[idx];
       int j = js[idx];
-      
+
       double dX0 = -2 * x(i, j);
       NumericVector dQ(beta.size() + gamma.size());
       for(int k = 0; k < beta.size(); k++)

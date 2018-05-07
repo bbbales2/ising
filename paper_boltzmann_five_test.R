@@ -159,6 +159,7 @@ source("casm_helper.R")
 corrs = getCorrs(path)
 
 b = getECIs(path)
+setTemperatureFraction(path, 1.0)
 corrs %>%
   select(starts_with("corr")) %>%
   `[`(1:55,) %>%

@@ -3,7 +3,7 @@ library(tidyverse)
 library(ggplot2)
 library(GGally)
 
-lpm = -50
+lpm = -1000
 
 opt_df = opts %>% bind_rows %>%
   group_by(which_opt) %>%
@@ -59,5 +59,5 @@ map(1:length(opt_samples), function(x) {
   geom_line(aes(group = opt), alpha = 0.25) +
   geom_point(data = list(x = mus, X0 = map(data, ~ .$f[1]) %>% unlist(), which = "data") %>% as.tibble, color = "red") +
   xlab("mu") + ylab("avg. composition") +
-  ggtitle("truth are red dots,\ndistribution of data generated from fits in black/grey\nmean + 95% interval estimates")
+  ggtitle("truth are red dots,\nblack lines are fits")
 

@@ -11,7 +11,7 @@ library(stats)
 library(parallel)
 
 path = "/home/bbales2/casm/cubic_2d"
-for(i in 1:10000) {
+for(i in 1:1) {
   ecis = c(c(0.0, 0.0), rnorm(3))
   setECIs(path, ecis)
   runMC(path)
