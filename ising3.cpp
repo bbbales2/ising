@@ -167,7 +167,7 @@ double dtriplets(const NumericMatrix &x, int i, int j, int w) {
 
 // [[Rcpp::export]]
 List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta, 
-                 NumericVector gamma, int S, int seed = 0) {
+                 NumericVector gamma, int S, int seed = 0, double kT = 1.0) {
   NumericMatrix x(clone(x_));
   NumericMatrix out(S, beta.size() + gamma.size() + 1);
   colnames(out) = CharacterVector::create("X0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6");
@@ -219,7 +219,7 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
         dE += gamma[k] * dQ(beta.size() + k);
       
       double r = runif(gen);
-      if(r > 1.0 / (1.0 + std::exp(-dE))) {
+      if(r > 1.0 / (1.0 + std::exp(-dE / kT))) {
         X0 += dX0;
         Q += dQ;
         x(i, j) = x(i, j) * -1;

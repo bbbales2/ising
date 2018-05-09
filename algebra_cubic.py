@@ -5,8 +5,8 @@ import collections
 from sympy.matrices import Matrix, zeros
 from sympy import simplify, expand, pprint, Poly
 
-N1 = 3
-N2 = 3
+N1 = 4
+N2 = 4
 
 q_ = zeros(N1, N2)
 
@@ -18,7 +18,6 @@ def q(i, j):
     return q_[(i + N1) % N1, (j + N2) % N2]
 
 idxs = list(itertools.product(range(N1), range(N2)))
-#idxs = [(0, 0), (1, 0), (1, 1), (2, 0), (2, 1), (2, 2)]
 
 squares = []
 for i, j in idxs:
@@ -32,20 +31,24 @@ print q_, idxs
 pairs = []
 for i, j in idxs:
     pairs.append((q(i, j) * q(i + 1, j) +
-                  q(i, j) * q(i + 1, j + 1) +
                   q(i, j) * q(i, j + 1) +
-                  q(i, j) * q(i - 1, j) +
-                  q(i, j) * q(i - 1, j - 1) +
-                  q(i, j) * q(i, j - 1)) / 2)
+                  q(i, j) * q(i, j - 1) +
+                  q(i, j) * q(i - 1, j)) / 2)
 
 triplets = []
 for i, j in idxs:
-    triplets.append((q(i, j) * q(i - 1, j) * q(i - 1, j - 1) +
-                     q(i, j) * q(i, j + 1) * q(i - 1, j) +
-                     q(i, j) * q(i + 1, j + 1) * q(i, j + 1) +
+    triplets.append((q(i, j) * q(i - 1, j) * q(i - 1, j + 1) +
+                     q(i, j) * q(i, j + 1) * q(i - 1, j + 1) +
+                     q(i, j) * q(i, j + 1) * q(i + 1, j + 1) +
                      q(i, j) * q(i + 1, j) * q(i + 1, j + 1) +
-                     q(i, j) * q(i, j - 1) * q(i + 1, j) +
-                     q(i, j) * q(i - 1, j - 1) * q(i, j - 1)) / 3)
+                     q(i, j) * q(i + 1, j) * q(i + 1, j - 1) +
+                     q(i, j) * q(i, j - 1) * q(i + 1, j - 1) +
+                     q(i, j) * q(i, j - 1) * q(i - 1, j - 1) +
+                     q(i, j) * q(i - 1, j) * q(i - 1, j - 1) +
+                     q(i, j) * q(i - 1, j) * q(i, j + 1) +
+                     q(i, j) * q(i, j + 1) * q(i + 1, j) +
+                     q(i, j) * q(i + 1, j) * q(i, j - 1) +
+                     q(i, j) * q(i, j - 1) * q(i - 1, j)) / 3)
 
 scalars = sum(scalars)
 pairs = sum(pairs)
