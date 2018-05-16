@@ -60,43 +60,9 @@ double dpairs(const NumericMatrix &x, int i, int j, int oi, int oj) {
 }
 
 // [[Rcpp::export]]
-double triplets(const NumericMatrix &x, int w) {
-  double total = 0.0;
-  
-  if(w == 0) {
-    for(int i = 0; i < x.nrow(); i++) {
-      for(int j = 0; j < x.ncol(); j++) {
-        // ##
-        //  x
-        total += x(i, j) *
-          x((i + 1) % x.nrow(), (j - 1 + x.ncol()) % x.ncol()) *
-          x((i + 1) % x.nrow(), j);
-        //   #
-        // x #
-        total += x(i, j) *
-          x(i, (j + 1) % x.ncol()) *
-          x((i + 1) % x.nrow(), (j + 1) % x.ncol());
-        // x
-        // # #
-        total += x(i, j) *
-          x((i - 1 + x.nrow()) % x.nrow(), (j + 1) % x.ncol()) *
-          x((i - 1 + x.nrow()) % x.nrow(), j);
-        // # x
-        // #  
-        total += x(i, j) *
-          x(i, (j - 1 + x.ncol()) % x.ncol()) *
-          x((i - 1 + x.nrow()) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
-      }
-    }
-  }
-  
-  return total;
-}
-
-// [[Rcpp::export]]
 double dtriplets(const NumericMatrix &x, int i, int j, int w) {
   double total = 0.0;
-
+  
   if(w == 0) {
     // # #
     //   x
@@ -139,7 +105,7 @@ double dtriplets(const NumericMatrix &x, int i, int j, int w) {
     total += x(i, j) *
       x(i, (j - 1 + x.ncol()) % x.ncol()) *
       x((i + 1) % x.nrow(), (j - 1 + x.ncol()) % x.ncol());
-
+    
     // x #
     // #
     total += x(i, j) *
@@ -160,8 +126,55 @@ double dtriplets(const NumericMatrix &x, int i, int j, int w) {
     total += x(i, j) *
       x(i, (j + 1) % x.ncol()) *
       x((i + 1) % x.nrow(), j);
+  } else if(w == 1) {
+    // ##x
+    total += x(i, j) *
+      x(i, (j - 2 + x.ncol()) % x.ncol()) *
+      x(i, (j - 1 + x.ncol()) % x.ncol());
+    // #x#
+    total += x(i, j) *
+      x(i, (j - 1 + x.ncol()) % x.ncol()) *
+      x(i, (j + 1) % x.ncol());
+    // x##
+    total += x(i, j) *
+      x(i, (j + 2) % x.ncol()) *
+      x(i, (j + 1) % x.ncol());
+    
+    // #
+    // #
+    // x
+    total += x(i, j) *
+      x((i + 2) % x.nrow(), j) *
+      x((i + 1) % x.nrow(), j);
+    // #
+    // x
+    // #
+    total += x(i, j) *
+      x((i + 1) % x.nrow(), j) *
+      x((i - 1 + x.nrow()) % x.nrow(), j);
+    // x
+    // #
+    // #
+    total += x(i, j) *
+      x((i - 2 + x.nrow()) % x.nrow(), j) *
+      x((i - 1 + x.nrow()) % x.nrow(), j);
+  } else {
+    throw std::logic_error("w value not implemented"); 
   }
   
+  return total;
+}
+
+// [[Rcpp::export]]
+double triplets(const NumericMatrix &x, int w) {
+  double total = 0.0;
+  
+  for(int i = 0; i < x.nrow(); i++) {
+    for(int j = 0; j < x.ncol(); j++) {
+      total += dtriplets(x, i, j, w) / 3.0;        
+    }
+  }
+
   return total;
 }
 
@@ -170,7 +183,7 @@ List ising_gibbs(NumericMatrix x_, double mu, NumericVector beta,
                  NumericVector gamma, int S, int seed = 0, double kT = 1.0) {
   NumericMatrix x(clone(x_));
   NumericMatrix out(S, beta.size() + gamma.size() + 1);
-  colnames(out) = CharacterVector::create("X0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6");
+  colnames(out) = CharacterVector::create("X0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7");
   
   const int ois[] = { -1, -1, -2, -2, -2 };
   const int ojs[] = { 0, 1, 0, 1, 2 };

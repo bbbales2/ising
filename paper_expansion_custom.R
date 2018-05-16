@@ -29,29 +29,31 @@ gamma = c(0.1)
 source("ising_helpers3.R")
 sourceCpp("ising3.cpp", showOutput = TRUE)
 
+x = matrix(sample(c(-1, 1), size = N * N, replace = TRUE), nrow = N)
 system.time(ising_gibbs(x, 0.0, beta, gamma, S, 0))
 
 out = ising_gibbs(x, 0.0, beta, gamma, S, 0)
 
+w = 1
 for(s in 1:100) {
   x = matrix(sample(c(-1, 1), size = N * N, replace = TRUE), nrow = N)
   
   i = sample(1:N, 1)
   j = sample(1:N, 1)
   
-  n1 = triplets(x, 0)
-  dn = dtriplets(x, i - 1, j - 1, 0)
+  n1 = triplets(x, w)
+  dn = dtriplets(x, i - 1, j - 1, w)
   x[i, j] = -x[i, j]
-  n2 = triplets(x, 0)
+  n2 = triplets(x, w)
   
-  stopifnot(n2 - n1 == -2 * dn)
+  stopifnot(abs((n2 - n1) - (-2 * dn)) < 1e-10)
   #print(c(n2 - n1, -2 * dn))
 }
 
 sourceCpp("ising3.cpp", showOutput = TRUE)
 kT = 1.0
-beta = c(0.3, 0.2, 0.0, 0.0, 0.0)
-out = ising_gibbs(x, 0.0, beta, 0.1, 4 * S, 1, kT)
+beta = c(0.3, 0.0, 0.0, 0.0, 0.0)
+out = ising_gibbs(x, 0.0, beta, c(0.0, 0.2), 10 * S, 1, kT)
 (out$states %>%
   as.tibble %>%
   mutate(rn = row_number()) %>%
